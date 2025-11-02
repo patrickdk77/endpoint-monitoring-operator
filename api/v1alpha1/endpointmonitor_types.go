@@ -40,6 +40,7 @@ type EmailConfig struct {
 	To             []string  `json:"to"`
 	EmailProvider  string    `json:"emailProvider"` // e.g., "ses"
 	EmailSecretRef SecretRef `json:"emailSecretRef"`
+	AlertOn        []string  `json:"alertOn,omitempty"` // values: "success", "failure"
 }
 
 type SecretRef struct {
