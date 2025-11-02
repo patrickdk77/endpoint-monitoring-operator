@@ -38,7 +38,5 @@ func (e *EmailNotifier) SendAlert(status string, msg string) error {
 }
 
 func (e *EmailNotifier) shouldAlert(status string) bool {
-	// Placeholder: extend EmailConfig with AlertOn []string if needed
-	// For now, default to failure only
-	return status == "failure"
+	return notifier.ShouldAlert(s.cfg.AlertOn, status)
 }
