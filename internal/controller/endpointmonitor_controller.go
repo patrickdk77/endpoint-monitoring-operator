@@ -92,7 +92,7 @@ func (r *EndpointMonitorReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	if monitor.Status.LastStatus != status {
 		monitor.Status.LastStatus = status
 		updated = true
-		if err := notifier.SendAlert('changed', alertMessage); err != nil {
+		if err := notifier.SendAlert("changed", alertMessage); err != nil {
 			logger.Error(err, "Failed to send alert")
 			return ctrl.Result{}, err
 		}

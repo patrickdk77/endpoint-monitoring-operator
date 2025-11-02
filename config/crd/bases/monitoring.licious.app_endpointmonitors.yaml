@@ -78,6 +78,10 @@ spec:
                   email:
                     description: EmailConfig is placeholder (no-op for now)
                     properties:
+                      alertOn:
+                        items:
+                          type: string
+                        type: array
                       emailProvider:
                         type: string
                       emailSecretRef:
