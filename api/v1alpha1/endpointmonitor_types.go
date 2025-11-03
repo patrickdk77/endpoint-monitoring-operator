@@ -35,12 +35,16 @@ type SlackConfig struct {
 
 // EmailConfig is placeholder (no-op for now)
 type EmailConfig struct {
-	Enabled        bool      `json:"enabled"`
-	From           string    `json:"from"`
-	To             []string  `json:"to"`
-	EmailProvider  string    `json:"emailProvider"` // e.g., "ses"
-	EmailSecretRef SecretRef `json:"emailSecretRef"`
-	AlertOn        []string  `json:"alertOn,omitempty"` // values: "success", "failure"
+	Enabled       bool     `json:"enabled"`
+	From          string   `json:"from"`
+	To            []string `json:"to"`
+	EmailProvider string   `json:"emailProvider,omitempty"` // e.g., "ses"
+	//EmailSecretRef SecretRef `json:"emailSecretRef"`
+	Host     string   `json:"host,omitempty"`
+	Username string   `json:"username,omitempty"`
+	Password string   `json:"password,omitempty"`
+	Subject  string   `json:"subject,omitempty"`
+	AlertOn  []string `json:"alertOn,omitempty"` // values: "success", "failure"
 }
 
 type SecretRef struct {
