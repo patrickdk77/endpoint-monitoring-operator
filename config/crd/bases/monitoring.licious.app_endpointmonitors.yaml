@@ -84,24 +84,24 @@ spec:
                         type: array
                       emailProvider:
                         type: string
-                      emailSecretRef:
-                        properties:
-                          name:
-                            type: string
-                        required:
-                        - name
-                        type: object
                       enabled:
                         type: boolean
                       from:
+                        type: string
+                      host:
+                        description: EmailSecretRef SecretRef `json:"emailSecretRef"`
+                        type: string
+                      password:
+                        type: string
+                      subject:
                         type: string
                       to:
                         items:
                           type: string
                         type: array
+                      username:
+                        type: string
                     required:
-                    - emailProvider
-                    - emailSecretRef
                     - enabled
                     - from
                     - to

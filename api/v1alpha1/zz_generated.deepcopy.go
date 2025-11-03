@@ -52,7 +52,6 @@ func (in *EmailConfig) DeepCopyInto(out *EmailConfig) {
 		*out = make([]string, len(*in))
 		copy(*out, *in)
 	}
-	out.EmailSecretRef = in.EmailSecretRef
 	if in.AlertOn != nil {
 		in, out := &in.AlertOn, &out.AlertOn
 		*out = make([]string, len(*in))
