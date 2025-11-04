@@ -55,7 +55,8 @@ type EmailConfig struct {
 	Host     string   `json:"host,omitempty"`
 	Username string   `json:"username,omitempty"`
 	Password string   `json:"password,omitempty"`
-	Subject  string   `json:"subject,omitempty"`
+	Subject  string   `json:"subject,omitempty"` // subject template
+	Body     string   `json:"body,omitempty"`    // message body template
 	AlertOn  []string `json:"alertOn,omitempty"` // values: "success", "failure"
 }
 
@@ -72,8 +73,9 @@ type DiscordConfig struct {
 
 // EndpointMonitorStatus defines the observed state of EndpointMonitor
 type EndpointMonitorStatus struct {
-	LastCheckedTime metav1.Time `json:"lastCheckedTime,omitempty"`
-	LastStatus      string      `json:"lastStatus,omitempty"` // e.g., success/failure
+	LastCheckedTime  metav1.Time `json:"lastCheckedTime,omitempty"`
+	LastStatus       string      `json:"lastStatus,omitempty"` // e.g., success/failure
+	LastStatusChange metav1.Time `json:"lastStatusChange,omitempty"`
 }
 
 //+kubebuilder:object:root=true

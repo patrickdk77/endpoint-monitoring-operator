@@ -82,6 +82,8 @@ spec:
                         items:
                           type: string
                         type: array
+                      body:
+                        type: string
                       emailProvider:
                         type: string
                       enabled:
@@ -154,6 +156,9 @@ spec:
                 format: date-time
                 type: string
               lastStatus:
+                type: string
+              lastStatusChange:
+                format: date-time
                 type: string
             type: object
         type: object

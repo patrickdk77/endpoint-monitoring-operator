@@ -22,12 +22,12 @@ func New(config *v1alpha1.DiscordConfig) (notifier.Notifier, error) {
 	return &DiscordNotifier{cfg: config}, nil
 }
 
-func (d *DiscordNotifier) SendAlert(status string, msg string) error {
+func (d *DiscordNotifier) SendAlert(status string, values *notifier.NoticeValues) error {
 	if !d.shouldAlert(status) {
 		return nil // silently skip
 	}
 
-	styledMsg := d.formatDiscordMessage(status, msg)
+	styledMsg := d.formatDiscordMessage(status, values)
 	payload := map[string]string{"content": styledMsg}
 	jsonData, err := json.Marshal(payload)
 	if err != nil {
@@ -51,9 +51,9 @@ func (d *DiscordNotifier) shouldAlert(status string) bool {
 	return notifier.ShouldAlert(d.cfg.AlertOn, status)
 }
 
-func (d *DiscordNotifier) formatDiscordMessage(status, msg string) string {
+func (d *DiscordNotifier) formatDiscordMessage(status string, values *notifier.NoticeValues) string {
 	var statusEmoji string
-	switch status {
+	switch values.Status {
 	case "success":
 		statusEmoji = ":white_check_mark:"
 	case "failure":
@@ -64,6 +64,6 @@ func (d *DiscordNotifier) formatDiscordMessage(status, msg string) string {
 
 	return fmt.Sprintf(
 		"%s **Endpoint Monitor Alert** %s\n\n**Status:** %s\n\n**Details:**\n```\n%s\n```",
-		statusEmoji, statusEmoji, strings.ToUpper(status), msg,
+		statusEmoji, statusEmoji, strings.ToUpper(values.Status), values.AlertMessage,
 	)
 }

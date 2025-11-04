@@ -65,10 +65,10 @@ type CompositeNotifier struct {
 }
 
 // SendAlert sends alerts to all configured notifiers
-func (c *CompositeNotifier) SendAlert(status string, msg string) error {
+func (c *CompositeNotifier) SendAlert(status string, values *notifier.NoticeValues) error {
 	var errs []error
 	for _, n := range c.notifiers {
-		if err := n.SendAlert(status, msg); err != nil {
+		if err := n.SendAlert(status, values); err != nil {
 			errs = append(errs, err)
 		}
 	}
