@@ -123,7 +123,7 @@ spec:
                     - enabled
                     - webhookUrl
                     type: object
-                  webhook.omitempty:
+                  webhook:
                     description: WebhookConfig defines Webhook notifier config
                     properties:
                       alertOn:
@@ -134,19 +134,16 @@ spec:
                         type: string
                       contentType:
                         type: string
-                      contents.omitempty:
+                      contents:
                         type: string
                       enabled:
                         type: boolean
                       webhookUrl:
                         type: string
                     required:
-                    - contents.omitempty
                     - enabled
                     - webhookUrl
                     type: object
-                required:
-                - webhook.omitempty
                 type: object
               smtpCheck:
                 properties:
