@@ -10,6 +10,7 @@ import (
 	"github.com/LiciousTech/endpoint-monitoring-operator/internal/notifier/email"
 	"github.com/LiciousTech/endpoint-monitoring-operator/internal/notifier/slack"
 	"github.com/LiciousTech/endpoint-monitoring-operator/internal/notifier/webhook"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // NotifierFactory creates notifiers based on configuration
@@ -74,10 +75,10 @@ type CompositeNotifier struct {
 }
 
 // SendAlert sends alerts to all configured notifiers
-func (c *CompositeNotifier) SendAlert(status string, values *notifier.NoticeValues) error {
+func (c *CompositeNotifier) SendAlert(status string, values *notifier.NoticeValues, client client.Client) error {
 	var errs []error
 	for _, n := range c.notifiers {
-		if err := n.SendAlert(status, values); err != nil {
+		if err := n.SendAlert(status, values, client); err != nil {
 			errs = append(errs, err)
 		}
 	}

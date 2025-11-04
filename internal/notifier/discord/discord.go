@@ -9,6 +9,7 @@ import (
 
 	"github.com/LiciousTech/endpoint-monitoring-operator/api/v1alpha1"
 	"github.com/LiciousTech/endpoint-monitoring-operator/internal/notifier"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 type DiscordNotifier struct {
@@ -22,7 +23,7 @@ func New(config *v1alpha1.DiscordConfig) (notifier.Notifier, error) {
 	return &DiscordNotifier{cfg: config}, nil
 }
 
-func (d *DiscordNotifier) SendAlert(status string, values *notifier.NoticeValues) error {
+func (d *DiscordNotifier) SendAlert(status string, values *notifier.NoticeValues, client client.Client) error {
 	if !d.shouldAlert(status) {
 		return nil // silently skip
 	}

@@ -33,7 +33,7 @@ func TestDiscordNotifier_SendAlert(t *testing.T) {
 
 	t.Run("should send alert on failure", func(t *testing.T) {
 		values := notifier.NoticeValues{Status: "failure", AlertMessage: "test message"}
-		err := n.SendAlert("failure", &values)
+		err := n.SendAlert("failure", &values, nil)
 		if err != nil {
 			t.Fatalf("expected no error, got %v", err)
 		}
@@ -46,7 +46,7 @@ func TestDiscordNotifier_SendAlert(t *testing.T) {
 
 	t.Run("should not send alert on success if not configured", func(t *testing.T) {
 		values := notifier.NoticeValues{Status: "success", AlertMessage: "should not send"}
-		err := n.SendAlert("success", &values)
+		err := n.SendAlert("success", &values, nil)
 		if err != nil {
 			t.Fatalf("expected no error, got %v", err)
 		}

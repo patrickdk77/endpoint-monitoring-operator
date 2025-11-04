@@ -86,14 +86,18 @@ spec:
                         type: string
                       emailProvider:
                         type: string
+                      emailSecretRef:
+                        properties:
+                          name:
+                            type: string
+                        required:
+                        - name
+                        type: object
                       enabled:
                         type: boolean
                       from:
                         type: string
                       host:
-                        description: EmailSecretRef SecretRef `json:"emailSecretRef"`
-                        type: string
-                      password:
                         type: string
                       subject:
                         type: string
@@ -101,11 +105,8 @@ spec:
                         items:
                           type: string
                         type: array
-                      username:
-                        type: string
                     required:
                     - enabled
-                    - from
                     - to
                     type: object
                   slack:
@@ -131,7 +132,12 @@ spec:
                           type: string
                         type: array
                       authorization:
-                        type: string
+                        properties:
+                          name:
+                            type: string
+                        required:
+                        - name
+                        type: object
                       contentType:
                         type: string
                       contents:

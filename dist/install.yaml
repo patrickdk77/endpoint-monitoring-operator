@@ -65,26 +65,6 @@ spec:
                 required:
                 - jsonAssertions
                 type: object
-              smtpCheck:
-                description: SmtpCheck defines variables for the smtp transaction
-                properties:
-                  helo:
-                    type: string
-                  tls:
-                    type: boolean
-                  startTls:
-                    type: boolean
-                  username:
-                    type: string
-                  password:
-                    type: string
-                  verifyAssertion:
-                    type: string
-                  fromAssertion:
-                    type: string
-                  toAssertion:
-                    type: string
-                type: object
               notify:
                 description: NotifyConfig holds notifier configurations
                 properties:
@@ -106,6 +86,12 @@ spec:
                   email:
                     description: EmailConfig is placeholder (no-op for now)
                     properties:
+                      alertOn:
+                        items:
+                          type: string
+                        type: array
+                      body:
+                        type: string
                       emailProvider:
                         type: string
                       emailSecretRef:
@@ -119,15 +105,16 @@ spec:
                         type: boolean
                       from:
                         type: string
+                      host:
+                        type: string
+                      subject:
+                        type: string
                       to:
                         items:
                           type: string
                         type: array
                     required:
-                    - emailProvider
-                    - emailSecretRef
                     - enabled
-                    - from
                     - to
                     type: object
                   slack:
@@ -145,6 +132,51 @@ spec:
                     - enabled
                     - webhookUrl
                     type: object
+                  webhook:
+                    description: WebhookConfig defines Webhook notifier config
+                    properties:
+                      alertOn:
+                        items:
+                          type: string
+                        type: array
+                      authorization:
+                        properties:
+                          name:
+                            type: string
+                        required:
+                        - name
+                        type: object
+                      contentType:
+                        type: string
+                      contents:
+                        type: string
+                      enabled:
+                        type: boolean
+                      webhookUrl:
+                        type: string
+                    required:
+                    - enabled
+                    - webhookUrl
+                    type: object
+                type: object
+              smtpCheck:
+                properties:
+                  fromAssertion:
+                    type: string
+                  helo:
+                    type: string
+                  password:
+                    type: string
+                  startTls:
+                    type: boolean
+                  tls:
+                    type: boolean
+                  toAssertion:
+                    type: string
+                  username:
+                    type: string
+                  verifyAssertion:
+                    type: string
                 type: object
             required:
             - checkInterval
@@ -159,6 +191,9 @@ spec:
                 format: date-time
                 type: string
               lastStatus:
+                type: string
+              lastStatusChange:
+                format: date-time
                 type: string
             type: object
         type: object
@@ -319,6 +354,14 @@ rules:
   - get
   - patch
   - update
+- apiGroups:
+  - ""
+  resources:
+  - secrets
+  verbs:
+  - get
+  - list
+  - watch
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -443,7 +486,7 @@ spec:
         - --health-probe-bind-address=:8081
         command:
         - /manager
-        image: tarun4licious/endpoint-monitoring-operator:1.0.0
+        image: docker.patrickdk.com/dswett/endpoint-monitoring-operator:0.0.2o
         livenessProbe:
           httpGet:
             path: /healthz

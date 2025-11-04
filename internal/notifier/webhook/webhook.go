@@ -2,6 +2,7 @@ package webhook
 
 import (
 	"bytes"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/LiciousTech/endpoint-monitoring-operator/api/v1alpha1"
 	"github.com/LiciousTech/endpoint-monitoring-operator/internal/notifier"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 type WebhookNotifier struct {
@@ -22,7 +24,7 @@ func New(config *v1alpha1.WebhookConfig) (notifier.Notifier, error) {
 	return &WebhookNotifier{cfg: config}, nil
 }
 
-func (w *WebhookNotifier) SendAlert(status string, values *notifier.NoticeValues) error {
+func (w *WebhookNotifier) SendAlert(status string, values *notifier.NoticeValues, client client.Client) error {
 	if !w.shouldAlert(status) {
 		return nil // silently skip
 	}
@@ -59,12 +61,23 @@ func (w *WebhookNotifier) SendAlert(status string, values *notifier.NoticeValues
 		}
 	}
 
-	if w.cfg.Authorization != "" {
-		req.Header.Add("Authorization", w.cfg.Authorization)
+	if w.cfg.Authorization.Name != "" {
+		secret, err := notifier.GetSecret(w.cfg.Authorization.Name, values.Namespace, client)
+		if err == nil {
+			if auth, ok := secret.Data["Raw"]; ok {
+				req.Header.Add("Authorization", string(auth))
+			}
+			if auth, ok := secret.Data["Basic"]; ok {
+				req.Header.Add("Authorization", "Basic "+base64.StdEncoding.EncodeToString(auth))
+			}
+			if auth, ok := secret.Data["Bearer"]; ok {
+				req.Header.Add("Authorization", "Bearer "+string(auth))
+			}
+		}
 	}
 
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	httpClient := &http.Client{}
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("WEBHOOK: failed to make http webhook request: %w", err)
 	}

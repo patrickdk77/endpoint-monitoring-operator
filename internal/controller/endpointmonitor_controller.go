@@ -85,6 +85,7 @@ func (r *EndpointMonitorReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		Message:          result.Message,
 		Response:         result.ResponseTime.String(),
 		CurrentTime:      now.String(),
+		Namespace:        req.Namespace,
 		AlertMessage:     "",
 	}
 	if result.Success {
@@ -117,13 +118,13 @@ func (r *EndpointMonitorReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	// calculate notice values that are not time sensitive
 	noticeValues.AlertMessage = fmt.Sprintf("%s monitor for %s is %s\n%s", noticeValues.Driver, noticeValues.Endpoint, noticeValues.Healthy, noticeValues.Message)
 
-	if err := notifier.SendAlert(noticeValues.Status, &noticeValues); err != nil {
+	if err := notifier.SendAlert(noticeValues.Status, &noticeValues, r.Client); err != nil {
 		logger.Error(err, "Failed to send alert")
 		return ctrl.Result{}, err
 	}
 
 	if noticeValues.LastStatus != noticeValues.Status {
-		if err := notifier.SendAlert("change", &noticeValues); err != nil {
+		if err := notifier.SendAlert("change", &noticeValues, r.Client); err != nil {
 			logger.Error(err, "Failed to send alert")
 			return ctrl.Result{}, err
 		}

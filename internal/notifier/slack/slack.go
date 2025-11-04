@@ -8,6 +8,7 @@ import (
 
 	"github.com/LiciousTech/endpoint-monitoring-operator/api/v1alpha1"
 	"github.com/LiciousTech/endpoint-monitoring-operator/internal/notifier"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 type SlackNotifier struct {
@@ -21,7 +22,7 @@ func New(config *v1alpha1.SlackConfig) (notifier.Notifier, error) {
 	return &SlackNotifier{cfg: config}, nil
 }
 
-func (s *SlackNotifier) SendAlert(status string, values *notifier.NoticeValues) error {
+func (s *SlackNotifier) SendAlert(status string, values *notifier.NoticeValues, client client.Client) error {
 	if !s.shouldAlert(status) {
 		return nil // silently skip
 	}
