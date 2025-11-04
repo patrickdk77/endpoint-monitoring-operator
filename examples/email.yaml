@@ -1,0 +1,26 @@
+apiVersion: monitoring.licious.app/v1alpha1
+kind: EndpointMonitor
+metadata:
+  name: rds-mysql-tcp-check
+  namespace: endpoint-monitoring-operator-system
+spec:
+  driver: tcp
+  endpoint: mysql-cluster-rds.example.com:3306
+  checkInterval: 30
+  notify:
+    email:
+      enabled: true
+      from: alerts@example.com
+      to: ["alerts@example.com"]
+      emailProvider: smtp
+      host: mail.example.com:587
+      subject: "{{.Driver}} {{.Endpoint}} changed status to {{.Status}}"
+      body: |-
+        {{.Name}} {{.Driver}} monitoring {{.Endpoint}} changed status to {{.Status}}, {{.Healthy}}
+        from {{.LastStatus}} since {{.LastStatusChange}} after {{.StatusTime}}
+        test took {{.Response}}
+        
+        {{.AlertMessage}}
+        {{.Message}}
+      alertOn:
+        - change

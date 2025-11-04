@@ -9,6 +9,7 @@ import (
 	"github.com/LiciousTech/endpoint-monitoring-operator/internal/notifier/discord"
 	"github.com/LiciousTech/endpoint-monitoring-operator/internal/notifier/email"
 	"github.com/LiciousTech/endpoint-monitoring-operator/internal/notifier/slack"
+	"github.com/LiciousTech/endpoint-monitoring-operator/internal/notifier/webhook"
 )
 
 // NotifierFactory creates notifiers based on configuration
@@ -50,6 +51,14 @@ func (f *NotifierFactory) CreateNotifier(config *v1alpha1.NotifyConfig) (notifie
 			return nil, fmt.Errorf("failed to create Discord notifier: %w", err)
 		}
 		notifiers = append(notifiers, discordNotifier)
+	}
+
+	if config.Webhook != nil && config.Webhook.Enabled {
+		webhookNotifier, err := webhook.New(config.Webhook)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create Webhook notifier: %w", err)
+		}
+		notifiers = append(notifiers, webhookNotifier)
 	}
 
 	if len(notifiers) == 0 {

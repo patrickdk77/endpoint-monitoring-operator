@@ -76,7 +76,7 @@ func (r *EndpointMonitorReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		// save values that can be overwritten by the Status().Update
 		LastStatus:       monitor.Status.LastStatus,
 		LastStatusChange: monitor.Status.LastStatusChange.Time.String(),
-		StatusTime:       now.Sub(monitor.Status.LastStatusChange.Time).String(),
+		StatusTime:       now.Sub(monitor.Status.LastStatusChange.Time).Round(time.Second).String(),
 		Status:           "failure",
 		Healthy:          "unhealthy",
 		Endpoint:         driver.GetEndpoint(),

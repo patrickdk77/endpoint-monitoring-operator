@@ -36,6 +36,17 @@ type NotifyConfig struct {
 	Slack   *SlackConfig   `json:"slack,omitempty"`
 	Email   *EmailConfig   `json:"email,omitempty"`
 	Discord *DiscordConfig `json:"discord,omitempty"`
+	Webhook *WebhookConfig `json:"webhook.omitempty"`
+}
+
+// WebhookConfig defines Webhook notifier config
+type WebhookConfig struct {
+	Enabled       bool     `json:"enabled"`
+	WebhookURL    string   `json:"webhookUrl"`
+	Authorization string   `json:"authorization,omitempty"` // Bearer or other token needed
+	ContentType   string   `json:"contentType,omitempty"`   // "application/json", "application/x-www-form-urlencoded", ...
+	Contents      string   `json:"contents.omitempty"`      // template, if empty will use GET instead of POST
+	AlertOn       []string `json:"alertOn,omitempty"`       // values: "success", "failure"
 }
 
 // SlackConfig defines Slack notifier config
@@ -52,7 +63,7 @@ type EmailConfig struct {
 	To            []string `json:"to"`
 	EmailProvider string   `json:"emailProvider,omitempty"` // e.g., "ses"
 	//EmailSecretRef SecretRef `json:"emailSecretRef"`
-	Host     string   `json:"host,omitempty"`
+	Host     string   `json:"host,omitempty"` // Host:Port
 	Username string   `json:"username,omitempty"`
 	Password string   `json:"password,omitempty"`
 	Subject  string   `json:"subject,omitempty"` // subject template

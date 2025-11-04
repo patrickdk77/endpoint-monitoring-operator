@@ -123,6 +123,30 @@ spec:
                     - enabled
                     - webhookUrl
                     type: object
+                  webhook.omitempty:
+                    description: WebhookConfig defines Webhook notifier config
+                    properties:
+                      alertOn:
+                        items:
+                          type: string
+                        type: array
+                      authorization:
+                        type: string
+                      contentType:
+                        type: string
+                      contents.omitempty:
+                        type: string
+                      enabled:
+                        type: boolean
+                      webhookUrl:
+                        type: string
+                    required:
+                    - contents.omitempty
+                    - enabled
+                    - webhookUrl
+                    type: object
+                required:
+                - webhook.omitempty
                 type: object
               smtpCheck:
                 properties:
