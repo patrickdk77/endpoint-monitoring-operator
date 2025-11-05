@@ -486,7 +486,7 @@ spec:
         - --health-probe-bind-address=:8081
         command:
         - /manager
-        image: docker.patrickdk.com/dswett/endpoint-monitoring-operator:0.0.2o
+        image: controller:latest
         livenessProbe:
           httpGet:
             path: /healthz
