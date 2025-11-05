@@ -60,17 +60,22 @@ func (t *SMTPDriver) Check() (*CheckResult, error) {
 	var conn net.Conn
 	var sconn *smtp.Client
 	var err error
-	hostPart, _, _ := net.SplitHostPort(t.endpoint)
+	hostPart, port, _ := net.SplitHostPort(t.endpoint)
+	if port == "" {
+		port = "25"
+	}
+	host := net.JoinHostPort(hostPart, port)
+
 	if t.check.Tls {
 		tlsConfig := &tls.Config{ServerName: hostPart}
 		dialer := &net.Dialer{Timeout: 10 * time.Second}
-		conn, err = tls.DialWithDialer(dialer, "tcp", t.endpoint, tlsConfig)
+		conn, err = tls.DialWithDialer(dialer, "tcp", host, tlsConfig)
 	} else {
-		conn, err = net.DialTimeout("tcp", t.endpoint, 10*time.Second)
+		conn, err = net.DialTimeout("tcp", host, 10*time.Second)
 	}
 
 	if err == nil {
-		sconn, err = smtp.NewClient(conn, t.endpoint)
+		sconn, err = smtp.NewClient(conn, host)
 	}
 	if err == nil && t.check.Helo != "" {
 		err = sconn.Hello(t.check.Helo)

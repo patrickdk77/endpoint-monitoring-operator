@@ -106,10 +106,14 @@ func (f *DriverFactory) CreateDriver(driverType string, endpoint string, monitor
 		return driver.NewHTTPJSONDriver(endpoint, monitor.Spec.HttpJsonCheck)
 	case "smtp":
 		return driver.NewSMTPDriver(endpoint, monitor.Spec.SmtpCheck, namespace, client)
+	case "redis":
+		return driver.NewREDISDriver(endpoint, monitor.Spec.RedisCheck, namespace, client)
+	case "tls":
+		return driver.NewTLSDriver(endpoint, monitor.Spec.TlsCheck)
 	case "tcp":
 		return driver.NewTCPDriver(endpoint)
 	case "dns":
-		return driver.NewDNSDriver(endpoint)
+		return driver.NewDNSDriver(endpoint, monitor.Spec.DnsCheck)
 	case "ping":
 		return driver.NewPingDriver(endpoint)
 	case "trino":

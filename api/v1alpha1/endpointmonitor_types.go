@@ -20,6 +20,23 @@ type SmtpCheck struct {
 	ToAssertion     string    `json:"toAssertion,omitempty"`
 }
 
+type DnsCheck struct {
+	Tls    bool   `json:"tls,omitempty"`    // use dns tls, 853
+	Verify string `json:"verify,omitempty"` // result must match
+	Server string `json:"server,omitempty"` // dns server to request from
+	Type   string `json:"type,omitempty"`   // dns type to request
+}
+
+type RedisCheck struct {
+	Tls       bool      `json:"tls,omitempty"`
+	SecretRef SecretRef `json:"secretRef,omitempty"`
+}
+
+type TlsCheck struct {
+	DaysToExpire int    `json:"daysToExpire,omitempty"` // Alert if < days left on the certificate
+	Host         string `json:"host,omitempty"`         // if certificate host to check if different from endpoint name
+}
+
 // EndpointMonitorSpec defines the desired state of EndpointMonitor
 type EndpointMonitorSpec struct {
 	Driver        string         `json:"driver"`        // ex: "opensearch", "trino", "http", "http-json"
@@ -28,6 +45,9 @@ type EndpointMonitorSpec struct {
 	Notify        NotifyConfig   `json:"notify"`
 	HttpJsonCheck *HttpJsonCheck `json:"httpJsonCheck,omitempty"` // only relevant for driver = "http-json"
 	SmtpCheck     *SmtpCheck     `json:"smtpCheck,omitempty"`     // only relevant for driver = "smtp"
+	RedisCheck    *RedisCheck    `json:"redisCheck,omitempty"`    // only relevant for driver = "redis"
+	TlsCheck      *TlsCheck      `json:"tlsCheck,omitempty"`      // only relevant for driver = "tls"
+	DnsCheck      *DnsCheck      `json:"dnsCheck,omitempty"`      // only relevant for driver = "dns"
 }
 
 // NotifyConfig holds notifier configurations
