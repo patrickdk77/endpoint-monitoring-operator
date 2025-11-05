@@ -30,6 +30,8 @@ Traditional uptime checkers only tell you if a port is open. **Endpoint-Monitori
 | `trino`       | Confirm Trino coordinator is *READY*               |
 | `opensearch`  | Check cluster health is `green` / `yellow`         |
 | `smtp`        | Verify a smtp is listening on a port               |
+| `redis`       | Verify redis is listening and responds on a port   |
+| `tls`         | Verify tls certificate is on a port                |
 
 Adding a new driver or notifier is only a few lines—everything is wired through a Factory pattern. :contentReference[oaicite:1]{index=1}
 

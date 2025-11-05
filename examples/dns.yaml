@@ -5,7 +5,7 @@ metadata:
   namespace: endpoint-monitoring-operator-system
 spec:
   driver: dns
-  endpoint: your-domain.com
+  endpoint: example.com
   checkInterval: 10 # in seconds
   notify:
     slack:
@@ -13,4 +13,25 @@ spec:
       webhookUrl: https://hooks.slack.com/services/XXXXXXXXX/YYYYYYYYY/ZZZZZZZZZZZZ
       alertOn:
         - success  # by default alerts only failures.
-        - failure 
+        - failure
+---
+apiVersion: monitoring.licious.app/v1alpha1
+kind: EndpointMonitor
+metadata:
+  name: my-dns-server-monitor
+  namespace: endpoint-monitoring-operator-system
+spec:
+  driver: dns
+  endpoint: example.com
+  dnsCheck:
+    server: a.iana-servers.net
+    type: A
+  checkInterval: 10 # in seconds
+  notify:
+    slack:
+      enabled: true
+      webhookUrl: https://hooks.slack.com/services/XXXXXXXXX/YYYYYYYYY/ZZZZZZZZZZZZ
+      alertOn:
+        - success  # by default alerts only failures.
+        - failure
+---

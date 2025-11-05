@@ -1,0 +1,17 @@
+apiVersion: monitoring.licious.app/v1alpha1
+kind: EndpointMonitor
+metadata:
+  name: https-tls-check
+  namespace: endpoint-monitoring-operator-system
+spec:
+  driver: tls
+  endpoint: example.com:443
+  tlsCheck:
+    daysToExpire: 10
+  checkInterval: 3600
+  notify:
+    slack:
+      enabled: true
+      webhookUrl: https://hooks.slack.com/services/XXXXXXXXX/YYYYYYYYY/ZZZZZZZZZZZZ
+      alertOn:
+        - failure

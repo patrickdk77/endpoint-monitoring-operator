@@ -40,6 +40,17 @@ spec:
             properties:
               checkInterval:
                 type: integer
+              dnsCheck:
+                properties:
+                  server:
+                    type: string
+                  tls:
+                    type: boolean
+                  type:
+                    type: string
+                  verify:
+                    type: string
+                type: object
               driver:
                 type: string
               endpoint:
@@ -151,6 +162,18 @@ spec:
                     - webhookUrl
                     type: object
                 type: object
+              redisCheck:
+                properties:
+                  secretRef:
+                    properties:
+                      name:
+                        type: string
+                    required:
+                    - name
+                    type: object
+                  tls:
+                    type: boolean
+                type: object
               smtpCheck:
                 properties:
                   emailSecretRef:
@@ -171,6 +194,13 @@ spec:
                   toAssertion:
                     type: string
                   verifyAssertion:
+                    type: string
+                type: object
+              tlsCheck:
+                properties:
+                  daysToExpire:
+                    type: integer
+                  host:
                     type: string
                 type: object
             required:
