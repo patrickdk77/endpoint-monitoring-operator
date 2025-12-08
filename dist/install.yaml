@@ -65,26 +65,6 @@ spec:
                 required:
                 - jsonAssertions
                 type: object
-              smtpCheck:
-                description: SmtpCheck defines variables for the smtp transaction
-                properties:
-                  helo:
-                    type: string
-                  tls:
-                    type: boolean
-                  startTls:
-                    type: boolean
-                  username:
-                    type: string
-                  password:
-                    type: string
-                  verifyAssertion:
-                    type: string
-                  fromAssertion:
-                    type: string
-                  toAssertion:
-                    type: string
-                type: object
               notify:
                 description: NotifyConfig holds notifier configurations
                 properties:
@@ -178,6 +158,25 @@ spec:
                     - enabled
                     - webhookUrl
                     type: object
+                type: object
+              smtpCheck:
+                properties:
+                  fromAssertion:
+                    type: string
+                  helo:
+                    type: string
+                  password:
+                    type: string
+                  startTls:
+                    type: boolean
+                  tls:
+                    type: boolean
+                  toAssertion:
+                    type: string
+                  username:
+                    type: string
+                  verifyAssertion:
+                    type: string
                 type: object
             required:
             - checkInterval
@@ -487,7 +486,7 @@ spec:
         - --health-probe-bind-address=:8081
         command:
         - /manager
-        image: controller:latest
+        image: docker.patrickdk.com/dswett/endpoint-monitoring-operator:0.0.2d
         livenessProbe:
           httpGet:
             path: /healthz

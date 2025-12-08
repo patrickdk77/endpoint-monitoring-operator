@@ -6,8 +6,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/LiciousTech/endpoint-monitoring-operator/api/v1alpha1"
-	"github.com/LiciousTech/endpoint-monitoring-operator/internal/notifier"
+	"github.com/patrickdk77/endpoint-monitoring-operator/api/v1alpha1"
+	"github.com/patrickdk77/endpoint-monitoring-operator/internal/notifier"
 )
 
 type alertPayload struct {

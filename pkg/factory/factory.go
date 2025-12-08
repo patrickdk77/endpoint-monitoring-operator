@@ -3,13 +3,13 @@ package factory
 import (
 	"fmt"
 
-	"github.com/LiciousTech/endpoint-monitoring-operator/api/v1alpha1"
-	"github.com/LiciousTech/endpoint-monitoring-operator/internal/driver"
-	"github.com/LiciousTech/endpoint-monitoring-operator/internal/notifier"
-	"github.com/LiciousTech/endpoint-monitoring-operator/internal/notifier/discord"
-	"github.com/LiciousTech/endpoint-monitoring-operator/internal/notifier/email"
-	"github.com/LiciousTech/endpoint-monitoring-operator/internal/notifier/slack"
-	"github.com/LiciousTech/endpoint-monitoring-operator/internal/notifier/webhook"
+	"github.com/patrickdk77/endpoint-monitoring-operator/api/v1alpha1"
+	"github.com/patrickdk77/endpoint-monitoring-operator/internal/driver"
+	"github.com/patrickdk77/endpoint-monitoring-operator/internal/notifier"
+	"github.com/patrickdk77/endpoint-monitoring-operator/internal/notifier/discord"
+	"github.com/patrickdk77/endpoint-monitoring-operator/internal/notifier/email"
+	"github.com/patrickdk77/endpoint-monitoring-operator/internal/notifier/slack"
+	"github.com/patrickdk77/endpoint-monitoring-operator/internal/notifier/webhook"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 

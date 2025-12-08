@@ -6,7 +6,7 @@ import (
 	"net"
 	"time"
 
-	v1 "github.com/LiciousTech/endpoint-monitoring-operator/api/v1alpha1"
+	v1 "github.com/patrickdk77/endpoint-monitoring-operator/api/v1alpha1"
 )
 
 type TLSDriver struct {
