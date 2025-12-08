@@ -1,6 +1,6 @@
 module github.com/patrickdk77/endpoint-monitoring-operator
 
-go 1.25.5
+go 1.25
 
 godebug default=go1.25
 
