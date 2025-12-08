@@ -11,12 +11,12 @@ import (
 	"text/template"
 	"time"
 
-	"github.com/patrickdk77/endpoint-monitoring-operator/api/v1alpha1"
-	"github.com/patrickdk77/endpoint-monitoring-operator/internal/common/smtpAuth"
-	"github.com/patrickdk77/endpoint-monitoring-operator/internal/notifier"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/sesv2"
 	"github.com/aws/aws-sdk-go-v2/service/sesv2/types"
+	"github.com/patrickdk77/endpoint-monitoring-operator/api/v1alpha1"
+	"github.com/patrickdk77/endpoint-monitoring-operator/internal/common/smtpAuth"
+	"github.com/patrickdk77/endpoint-monitoring-operator/internal/notifier"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
