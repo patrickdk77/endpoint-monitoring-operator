@@ -1,8 +1,8 @@
-module github.com/LiciousTech/endpoint-monitoring-operator
+module github.com/patrickdk77/endpoint-monitoring-operator
 
-go 1.23.0
+go 1.25.0
 
-godebug default=go1.23
+godebug default=go1.25
 
 require (
 	github.com/aws/aws-sdk-go-v2/config v1.31.16

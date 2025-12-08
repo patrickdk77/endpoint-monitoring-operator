@@ -7,9 +7,9 @@ import (
 	"net/smtp"
 	"time"
 
-	v1 "github.com/LiciousTech/endpoint-monitoring-operator/api/v1alpha1"
-	"github.com/LiciousTech/endpoint-monitoring-operator/internal/common/smtpAuth"
-	"github.com/LiciousTech/endpoint-monitoring-operator/internal/notifier"
+	v1 "github.com/patrickdk77/endpoint-monitoring-operator/api/v1alpha1"
+	"github.com/patrickdk77/endpoint-monitoring-operator/internal/common/smtpAuth"
+	"github.com/patrickdk77/endpoint-monitoring-operator/internal/notifier"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
