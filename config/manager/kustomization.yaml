@@ -5,4 +5,4 @@ kind: Kustomization
 images:
 - name: controller
   newName: docker.patrickdk.com/dswett/endpoint-monitoring-operator
-  newTag: 0.0.2d
+  newTag: 0.0.2v
