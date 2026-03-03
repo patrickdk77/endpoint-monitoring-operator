@@ -38,6 +38,11 @@ func (d *DNSDriver) Check() (*CheckResult, error) {
 		var hostPart string
 		var port string
 		hostPart, port, err = net.SplitHostPort(d.check.Server)
+		if err != nil {
+			hostPart = d.check.Server
+			port = ""
+			err = nil
+		}
 		if err == nil {
 			if port == "" {
 				port = "53"

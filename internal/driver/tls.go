@@ -29,7 +29,10 @@ func (t *TLSDriver) Check() (*CheckResult, error) {
 	dialer := &net.Dialer{Timeout: 10 * time.Second}
 	conn, err := tls.DialWithDialer(dialer, "tcp", t.endpoint, nil)
 	if err == nil {
-		hostPart, _, _ := net.SplitHostPort(t.endpoint)
+		hostPart, _, errSplit := net.SplitHostPort(t.endpoint)
+		if errSplit != nil {
+			hostPart = t.endpoint
+		}
 		if t.check.Host != "" {
 			hostPart = t.check.Host
 		}

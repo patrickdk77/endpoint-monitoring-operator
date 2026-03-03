@@ -43,7 +43,10 @@ func NewSMTPDriver(endpoint string, check *v1.SmtpCheck, namespace string, clien
 		if passwordSecret, ok := secret.Data["password"]; ok {
 			password = string(passwordSecret)
 		}
-		hostPart, _, _ := net.SplitHostPort(endpoint)
+		hostPart, _, errSplit := net.SplitHostPort(endpoint)
+		if errSplit != nil {
+			hostPart = endpoint
+		}
 		if username != "" && password != "" {
 			auth = smtpAuth.CommonAuth(identity, username, password, hostPart)
 		}
@@ -61,7 +64,11 @@ func (t *SMTPDriver) Check() (*CheckResult, error) {
 	var conn net.Conn
 	var sconn *smtp.Client
 	var err error
-	hostPart, port, _ := net.SplitHostPort(t.endpoint)
+	hostPart, port, errSplit := net.SplitHostPort(t.endpoint)
+	if errSplit != nil {
+		hostPart = t.endpoint
+		port = ""
+	}
 	if port == "" {
 		port = "25"
 	}

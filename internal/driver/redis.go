@@ -58,7 +58,11 @@ func (t *REDISDriver) Check() (*CheckResult, error) {
 	var err error
 	buffer := make([]byte, 1024)
 
-	hostPart, port, _ := net.SplitHostPort(t.endpoint)
+	hostPart, port, errSplit := net.SplitHostPort(t.endpoint)
+	if errSplit != nil {
+		hostPart = t.endpoint
+		port = ""
+	}
 	if port == "" {
 		port = "6379"
 	}
