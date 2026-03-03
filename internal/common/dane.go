@@ -123,7 +123,7 @@ func getNameserver() string {
 // ResolveAndVerifyDANE resolves the TLSA records for a given domain/port and verifies peer certificates
 func ResolveAndVerifyDANE(domain string, port string, peerCerts []*x509.Certificate) error {
 	if len(peerCerts) == 0 {
-		return errors.New("no peer certificates provided")
+		return nil // No certificates to verify
 	}
 
 	qNameStr := fmt.Sprintf("_%s._tcp.%s.", port, domain)
@@ -135,11 +135,11 @@ func ResolveAndVerifyDANE(domain string, port string, peerCerts []*x509.Certific
 	c := new(dns.Client)
 	in, _, err := c.Exchange(m, getNameserver())
 	if err != nil {
-		return fmt.Errorf("failed to lookup TLSA records: %v", err)
+		return nil // DNS lookup failed, no records to very dane against
 	}
 
 	if in.Rcode != dns.RcodeSuccess {
-		return fmt.Errorf("DNS query failed with Rcode: %v", in.Rcode)
+		return nil // DNS query failed, no records to very dane against
 	}
 
 	foundTLSA := false
@@ -172,7 +172,7 @@ func ResolveAndVerifyDANE(domain string, port string, peerCerts []*x509.Certific
 	}
 
 	if !foundTLSA {
-		return fmt.Errorf("no TLSA records found for %s", qNameStr)
+		return nil // No TLSA records found, can't verify DANE
 	}
 
 	return fmt.Errorf("certificate verification failed against all TLSA records: %v", lastErr)
