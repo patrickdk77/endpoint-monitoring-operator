@@ -7,6 +7,7 @@ import (
 	"time"
 
 	v1 "github.com/patrickdk77/endpoint-monitoring-operator/api/v1alpha1"
+	"github.com/patrickdk77/endpoint-monitoring-operator/internal/common"
 )
 
 type TLSDriver struct {
@@ -35,10 +36,21 @@ func (t *TLSDriver) Check() (*CheckResult, error) {
 		err = conn.VerifyHostname(hostPart)
 	}
 	if err == nil && t.check.DaysToExpire > 0 {
-		days := int(conn.ConnectionState().PeerCertificates[0].NotAfter.Sub(time.Now()).Hours() / 24)
+		days := int(time.Until(conn.ConnectionState().PeerCertificates[0].NotAfter).Hours() / 24)
 		if days < t.check.DaysToExpire {
 			err = fmt.Errorf("cerificate expires in %d days, alert at under %d", days, t.check.DaysToExpire)
 		}
+	}
+	if err == nil {
+		hostPart, portPart, errSplit := net.SplitHostPort(t.endpoint)
+		if errSplit != nil {
+			hostPart = t.endpoint
+			portPart = "443"
+		}
+		if t.check.Host != "" {
+			hostPart = t.check.Host
+		}
+		err = common.ResolveAndVerifyDANE(hostPart, portPart, conn.ConnectionState().PeerCertificates)
 	}
 	if conn != nil {
 		defer conn.Close()

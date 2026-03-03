@@ -8,6 +8,7 @@ import (
 	"time"
 
 	v1 "github.com/patrickdk77/endpoint-monitoring-operator/api/v1alpha1"
+	"github.com/patrickdk77/endpoint-monitoring-operator/internal/common"
 	"github.com/patrickdk77/endpoint-monitoring-operator/internal/common/smtpAuth"
 	"github.com/patrickdk77/endpoint-monitoring-operator/internal/notifier"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -70,6 +71,11 @@ func (t *SMTPDriver) Check() (*CheckResult, error) {
 		tlsConfig := &tls.Config{ServerName: hostPart}
 		dialer := &net.Dialer{Timeout: 10 * time.Second}
 		conn, err = tls.DialWithDialer(dialer, "tcp", host, tlsConfig)
+		if err == nil {
+			if tlsConn, ok := conn.(*tls.Conn); ok {
+				err = common.ResolveAndVerifyDANE(hostPart, port, tlsConn.ConnectionState().PeerCertificates)
+			}
+		}
 	} else {
 		conn, err = net.DialTimeout("tcp", host, 10*time.Second)
 	}
@@ -83,6 +89,11 @@ func (t *SMTPDriver) Check() (*CheckResult, error) {
 	if err == nil && t.check.StartTls && !t.check.Tls {
 		tlsConfig := &tls.Config{ServerName: hostPart}
 		err = sconn.StartTLS(tlsConfig)
+		if err == nil {
+			if tlsConn, ok := sconn.TLSConnectionState(); ok {
+				err = common.ResolveAndVerifyDANE(hostPart, port, tlsConn.PeerCertificates)
+			}
+		}
 	}
 	if err == nil && t.auth != nil {
 		err = sconn.Auth(t.auth)

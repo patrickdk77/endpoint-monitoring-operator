@@ -27,7 +27,7 @@ func NewDNSDriver(endpoint string, check *v1.DnsCheck) (Driver, error) {
 func (d *DNSDriver) Check() (*CheckResult, error) {
 	start := time.Now()
 
-	var err error
+	var err error = nil
 	var resolver *net.Resolver
 	if d.check == nil || d.check.Server == "" { // Use default dns resolver
 		resolver = &net.Resolver{
@@ -35,7 +35,9 @@ func (d *DNSDriver) Check() (*CheckResult, error) {
 			Dial:     nil,
 		}
 	} else {
-		hostPart, port, err := net.SplitHostPort(d.check.Server)
+		var hostPart string
+		var port string
+		hostPart, port, err = net.SplitHostPort(d.check.Server)
 		if err == nil {
 			if port == "" {
 				port = "53"
@@ -43,7 +45,8 @@ func (d *DNSDriver) Check() (*CheckResult, error) {
 					port = "853"
 				}
 			}
-			host, err := net.LookupHost(hostPart) // We need to specify the dns server by ip address, so make sure
+			var host []string
+			host, err = net.LookupHost(hostPart) // We need to specify the dns server by ip address, so make sure
 			if err == nil {
 				server := net.JoinHostPort(host[0], port)
 				if d.check.Tls { // use DNSoverTLS server
@@ -72,7 +75,8 @@ func (d *DNSDriver) Check() (*CheckResult, error) {
 	if err == nil && resolver != nil {
 		switch strings.ToUpper(d.check.Type) {
 		case "TXT":
-			values, err := resolver.LookupTXT(context.Background(), d.endpoint)
+			var values []string
+			values, err = resolver.LookupTXT(context.Background(), d.endpoint)
 			if err == nil && d.check.Verify != "" {
 				match := false
 				for _, val := range values {
@@ -85,14 +89,16 @@ func (d *DNSDriver) Check() (*CheckResult, error) {
 				}
 			}
 		case "CNAME":
-			value, err := resolver.LookupCNAME(context.Background(), d.endpoint)
+			var value string
+			value, err = resolver.LookupCNAME(context.Background(), d.endpoint)
 			if err == nil && d.check.Verify != "" {
 				if value != d.check.Verify {
 					err = fmt.Errorf("returned dns result did not match Verify value")
 				}
 			}
 		case "PTR":
-			values, err := resolver.LookupAddr(context.Background(), d.endpoint)
+			var values []string
+			values, err = resolver.LookupAddr(context.Background(), d.endpoint)
 			if err == nil && d.check.Verify != "" {
 				match := false
 				for _, val := range values {
@@ -105,7 +111,8 @@ func (d *DNSDriver) Check() (*CheckResult, error) {
 				}
 			}
 		case "AAAA":
-			values, err := resolver.LookupIP(context.Background(), "ip6", d.endpoint)
+			var values []net.IP
+			values, err = resolver.LookupIP(context.Background(), "ip6", d.endpoint)
 			if err == nil && d.check.Verify != "" {
 				ip := net.ParseIP(d.check.Verify)
 				match := false
@@ -119,7 +126,8 @@ func (d *DNSDriver) Check() (*CheckResult, error) {
 				}
 			}
 		case "A":
-			values, err := resolver.LookupIP(context.Background(), "ip4", d.endpoint)
+			var values []net.IP
+			values, err = resolver.LookupIP(context.Background(), "ip4", d.endpoint)
 			if err == nil && d.check.Verify != "" {
 				ip := net.ParseIP(d.check.Verify)
 				match := false
@@ -133,7 +141,8 @@ func (d *DNSDriver) Check() (*CheckResult, error) {
 				}
 			}
 		default:
-			values, err := resolver.LookupHost(context.Background(), d.endpoint)
+			var values []string
+			values, err = resolver.LookupHost(context.Background(), d.endpoint)
 			if err == nil && d.check.Verify != "" {
 				match := false
 				for _, val := range values {
