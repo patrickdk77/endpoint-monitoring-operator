@@ -4,14 +4,17 @@ import (
 	"fmt"
 	"net/http"
 	"time"
+
+	v1 "github.com/patrickdk77/endpoint-monitoring-operator/api/v1alpha1"
 )
 
 type HTTPDriver struct {
 	endpoint string
 	client   *http.Client
+	check    *v1.TlsCheck
 }
 
-func NewHTTPDriver(endpoint string) (Driver, error) {
+func NewHTTPDriver(endpoint string, check *v1.TlsCheck) (Driver, error) {
 	if endpoint == "" {
 		return nil, fmt.Errorf("endpoint cannot be empty")
 	}
@@ -21,6 +24,7 @@ func NewHTTPDriver(endpoint string) (Driver, error) {
 		client: &http.Client{
 			Timeout: 30 * time.Second,
 		},
+		check: check,
 	}, nil
 }
 
@@ -32,6 +36,18 @@ func (h *HTTPDriver) Check() (*CheckResult, error) {
 
 	result := &CheckResult{
 		ResponseTime: duration,
+	}
+
+	if err == nil && resp != nil && resp.TLS != nil && h.check != nil && len(resp.TLS.PeerCertificates) > 0 {
+		if h.check.DaysToExpire > 0 {
+			days := int(time.Until(resp.TLS.PeerCertificates[0].NotAfter).Hours() / 24)
+			if days < h.check.DaysToExpire {
+				err = fmt.Errorf("certificate expires in %d days, alert at under %d", days, h.check.DaysToExpire)
+			}
+		}
+		if err == nil && h.check.Host != "" {
+			err = resp.TLS.PeerCertificates[0].VerifyHostname(h.check.Host)
+		}
 	}
 
 	if err != nil {
