@@ -1,0 +1,20 @@
+apiVersion: monitoring.licious.app/v1alpha1
+kind: EndpointMonitor
+metadata:
+  name: mysql-check
+  namespace: endpoint-monitoring-operator-system
+spec:
+  driver: mysql
+  endpoint: mysql.example.com:3306
+  checkInterval: 60
+  mysqlCheck:
+    secretRef:
+      name: mysql-credentials
+    # Optionally, verify replication slave status and lag (in seconds)
+    # maxSecondsBehindMaster: 60
+  notify:
+    slack:
+      enabled: true
+      webhookUrl: https://hooks.slack.com/services/XXXXXXXXX/YYYYYYYYY/ZZZZZZZZZZZZ
+      alertOn:
+        - failure
