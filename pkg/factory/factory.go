@@ -120,6 +120,8 @@ func (f *DriverFactory) CreateDriver(driverType string, endpoint string, monitor
 		return driver.NewTrinoDriver(endpoint)
 	case "opensearch":
 		return driver.NewOpenSearchDriver(endpoint)
+	case "mysql":
+		return driver.NewMYSQLDriver(endpoint, monitor.Spec.MysqlCheck, namespace, client)
 	default:
 		return nil, fmt.Errorf("unsupported driver type: %s", driverType)
 	}

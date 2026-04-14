@@ -37,6 +37,11 @@ type TlsCheck struct {
 	Host         string `json:"host,omitempty"`         // if certificate host to check if different from endpoint name
 }
 
+type MysqlCheck struct {
+	SecretRef              SecretRef `json:"secretRef,omitempty"`
+	MaxSecondsBehindMaster *int      `json:"maxSecondsBehindMaster,omitempty"`
+}
+
 // EndpointMonitorSpec defines the desired state of EndpointMonitor
 type EndpointMonitorSpec struct {
 	Driver        string         `json:"driver"`        // ex: "opensearch", "trino", "http", "http-json"
@@ -46,8 +51,9 @@ type EndpointMonitorSpec struct {
 	HttpJsonCheck *HttpJsonCheck `json:"httpJsonCheck,omitempty"` // only relevant for driver = "http-json"
 	SmtpCheck     *SmtpCheck     `json:"smtpCheck,omitempty"`     // only relevant for driver = "smtp"
 	RedisCheck    *RedisCheck    `json:"redisCheck,omitempty"`    // only relevant for driver = "redis"
-	TlsCheck      *TlsCheck      `json:"tlsCheck,omitempty"`      // only relevant for driver = "tls"
+	TlsCheck      *TlsCheck      `json:"tlsCheck,omitempty"`      // only relevant for driver = "tls", "http"
 	DnsCheck      *DnsCheck      `json:"dnsCheck,omitempty"`      // only relevant for driver = "dns"
+	MysqlCheck    *MysqlCheck    `json:"mysqlCheck,omitempty"`    // only relevant for driver = "mysql"
 }
 
 // NotifyConfig holds notifier configurations
