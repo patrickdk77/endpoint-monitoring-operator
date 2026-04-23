@@ -68,6 +68,18 @@ spec:
                 required:
                 - jsonAssertions
                 type: object
+              mysqlCheck:
+                properties:
+                  maxSecondsBehindMaster:
+                    type: integer
+                  secretRef:
+                    properties:
+                      name:
+                        type: string
+                    required:
+                    - name
+                    type: object
+                type: object
               notify:
                 description: NotifyConfig holds notifier configurations
                 properties:
