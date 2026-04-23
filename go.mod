@@ -125,3 +125,8 @@ require (
 	sigs.k8s.io/structured-merge-diff/v6 v6.4.0 // indirect
 	sigs.k8s.io/yaml v1.6.0 // indirect
 )
+
+// Security version pins — do not remove, do not run 'go mod tidy' without re-adding these.
+// go-jose/v4: CVE fix, introduced transitively via google.golang.org/grpc, sigs.k8s.io/apiserver-network-proxy/konnectivity-client,
+// k8s.io/apiserver, k8s.io/apiextensions-apiserver, and sigs.k8s.io/controller-runtime; fixed in v4.1.4.
+require github.com/go-jose/go-jose/v4 v4.1.4 // indirect
