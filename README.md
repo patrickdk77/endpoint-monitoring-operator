@@ -1,6 +1,6 @@
 # Endpoint-Monitoring Operator
 
-> A lightweight, extensible Kubernetes Operator that probes *any* endpoint—HTTP/JSON, TCP, DNS, ICMP, Trino, OpenSearch, and more—and routes alerts to Slack or e-mail with a simple Custom Resource.  
+> A lightweight, extensible Kubernetes Operator that probes *any* endpoint-HTTP/JSON, TCP, DNS, ICMP, Trino, OpenSearch, and more-and routes alerts to Slack or e-mail with a simple Custom Resource.  
 
 ![Go](https://img.shields.io/badge/Go-%3E%3D1.23-blue?logo=go)
 ![License](https://img.shields.io/github/license/LiciousTech/endpoint-monitoring-operator)
@@ -33,7 +33,7 @@ Traditional uptime checkers only tell you if a port is open. **Endpoint-Monitori
 | `redis`       | Verify redis is listening and responds on a port   |
 | `tls`         | Verify tls certificate is on a port                |
 
-Adding a new driver or notifier is only a few lines—everything is wired through a Factory pattern. :contentReference[oaicite:1]{index=1}
+Adding a new driver or notifier is only a few lines-everything is wired through a Factory pattern. :contentReference[oaicite:1]{index=1}
 
 ---
 
@@ -102,7 +102,7 @@ Feel free to open an Issue or Pull Request!
 2. Create a feature branch
 3. Run make test and golangci-lint run
 
-Submit a PR—all contributions welcome!
+Submit a PR-all contributions welcome!
 See CONTRIBUTING.md for details.
 
 
