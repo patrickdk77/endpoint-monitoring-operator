@@ -10,6 +10,7 @@ import (
 
 	"github.com/patrickdk77/endpoint-monitoring-operator/api/v1alpha1"
 	"github.com/patrickdk77/endpoint-monitoring-operator/internal/notifier"
+	"github.com/patrickdk77/endpoint-monitoring-operator/internal/version"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -61,6 +62,8 @@ func (w *WebhookNotifier) SendAlert(status string, values *notifier.NoticeValues
 		}
 	}
 
+	req.Header.Set("User-Agent", version.UserAgent)
+
 	if w.cfg.Authorization.Name != "" {
 		secret, err := notifier.GetSecret(w.cfg.Authorization.Name, values.Namespace, client)
 		if err == nil {
@@ -81,7 +84,6 @@ func (w *WebhookNotifier) SendAlert(status string, values *notifier.NoticeValues
 	if err != nil {
 		return fmt.Errorf("WEBHOOK: failed to make http webhook request: %w", err)
 	}
-
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {

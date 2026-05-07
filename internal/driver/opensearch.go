@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/patrickdk77/endpoint-monitoring-operator/internal/version"
 )
 
 type OpenSearchDriver struct {
@@ -51,11 +53,21 @@ func (o *OpenSearchDriver) Check() (*CheckResult, error) {
 
 	healthURL := o.endpoint + "/_cluster/health"
 
-	resp, err := o.client.Get(healthURL)
+	req, err := http.NewRequest(http.MethodGet, healthURL, nil)
+	var resp *http.Response
+	if err == nil {
+		req.Header.Set("User-Agent", version.UserAgent)
+		resp, err = o.client.Do(req)
+	}
+
 	duration := time.Since(start)
 
 	result := &CheckResult{
 		ResponseTime: duration,
+	}
+
+	if resp != nil {
+		defer resp.Body.Close()
 	}
 
 	if err != nil {
@@ -64,8 +76,6 @@ func (o *OpenSearchDriver) Check() (*CheckResult, error) {
 		result.Message = fmt.Sprintf("OpenSearch check failed: %v", err)
 		return result, nil
 	}
-
-	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
 		result.Success = false

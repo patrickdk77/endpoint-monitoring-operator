@@ -6,6 +6,7 @@ import (
 	"time"
 
 	v1 "github.com/patrickdk77/endpoint-monitoring-operator/api/v1alpha1"
+	"github.com/patrickdk77/endpoint-monitoring-operator/internal/version"
 )
 
 type HTTPDriver struct {
@@ -31,9 +32,15 @@ func NewHTTPDriver(endpoint string, check *v1.TlsCheck) (Driver, error) {
 func (h *HTTPDriver) Check() (*CheckResult, error) {
 	start := time.Now()
 
-	resp, err := h.client.Get(h.endpoint)
-	duration := time.Since(start)
+	req, err := http.NewRequest(http.MethodGet, h.endpoint, nil)
 
+	var resp *http.Response
+	if err == nil {
+		req.Header.Set("User-Agent", version.UserAgent)
+		resp, err = h.client.Do(req)
+	}
+
+	duration := time.Since(start)
 	result := &CheckResult{
 		ResponseTime: duration,
 	}
@@ -50,14 +57,16 @@ func (h *HTTPDriver) Check() (*CheckResult, error) {
 		}
 	}
 
+	if resp != nil {
+		defer resp.Body.Close()
+	}
+
 	if err != nil {
 		result.Success = false
 		result.Error = err
 		result.Message = fmt.Sprintf("HTTP check failed: %v", err)
 		return result, nil
 	}
-
-	defer resp.Body.Close()
 
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		result.Success = true

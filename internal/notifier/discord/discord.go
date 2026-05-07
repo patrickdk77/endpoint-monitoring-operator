@@ -9,6 +9,7 @@ import (
 
 	"github.com/patrickdk77/endpoint-monitoring-operator/api/v1alpha1"
 	"github.com/patrickdk77/endpoint-monitoring-operator/internal/notifier"
+	"github.com/patrickdk77/endpoint-monitoring-operator/internal/version"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -35,7 +36,14 @@ func (d *DiscordNotifier) SendAlert(status string, values *notifier.NoticeValues
 		return fmt.Errorf("failed to marshal discord payload: %w", err)
 	}
 
-	resp, err := http.Post(d.cfg.WebhookURL, "application/json", bytes.NewBuffer(jsonData))
+	req, err := http.NewRequest(http.MethodPost, d.cfg.WebhookURL, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return fmt.Errorf("failed to create discord request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", version.UserAgent)
+	httpClient := &http.Client{}
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send discord alert: %w", err)
 	}

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	v1 "github.com/patrickdk77/endpoint-monitoring-operator/api/v1alpha1"
+	"github.com/patrickdk77/endpoint-monitoring-operator/internal/version"
 )
 
 type HTTPJSONDriver struct {
@@ -34,9 +35,14 @@ func NewHTTPJSONDriver(endpoint string, check *v1.HttpJsonCheck) (Driver, error)
 func (h *HTTPJSONDriver) Check() (*CheckResult, error) {
 	start := time.Now()
 
-	resp, err := h.client.Get(h.endpoint)
-	duration := time.Since(start)
+	req, err := http.NewRequest(http.MethodGet, h.endpoint, nil)
+	var resp *http.Response
+	if err == nil {
+		req.Header.Set("User-Agent", version.UserAgent)
+		resp, err = h.client.Do(req)
+	}
 
+	duration := time.Since(start)
 	result := &CheckResult{ResponseTime: duration}
 	if err != nil {
 		result.Success = false
@@ -44,7 +50,9 @@ func (h *HTTPJSONDriver) Check() (*CheckResult, error) {
 		result.Message = fmt.Sprintf("HTTP-JSON request failed: %v", err)
 		return result, nil
 	}
-	defer resp.Body.Close()
+	if resp != nil {
+		defer resp.Body.Close()
+	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {

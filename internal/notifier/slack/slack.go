@@ -8,6 +8,7 @@ import (
 
 	"github.com/patrickdk77/endpoint-monitoring-operator/api/v1alpha1"
 	"github.com/patrickdk77/endpoint-monitoring-operator/internal/notifier"
+	"github.com/patrickdk77/endpoint-monitoring-operator/internal/version"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -33,7 +34,14 @@ func (s *SlackNotifier) SendAlert(status string, values *notifier.NoticeValues, 
 		return fmt.Errorf("failed to marshal slack payload: %w", err)
 	}
 
-	resp, err := http.Post(s.cfg.WebhookURL, "application/json", bytes.NewBuffer(jsonData))
+	req, err := http.NewRequest(http.MethodPost, s.cfg.WebhookURL, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return fmt.Errorf("failed to create slack request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", version.UserAgent)
+	httpClient := &http.Client{}
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send slack alert: %w", err)
 	}
