@@ -2,7 +2,9 @@ package driver
 
 import (
 	"fmt"
+	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	v1 "github.com/patrickdk77/endpoint-monitoring-operator/api/v1alpha1"
@@ -10,12 +12,13 @@ import (
 )
 
 type HTTPDriver struct {
-	endpoint string
-	client   *http.Client
-	check    *v1.TlsCheck
+	endpoint  string
+	client    *http.Client
+	check     *v1.TlsCheck
+	httpCheck *v1.HttpCheck
 }
 
-func NewHTTPDriver(endpoint string, check *v1.TlsCheck) (Driver, error) {
+func NewHTTPDriver(endpoint string, check *v1.TlsCheck, httpCheck *v1.HttpCheck) (Driver, error) {
 	if endpoint == "" {
 		return nil, fmt.Errorf("endpoint cannot be empty")
 	}
@@ -25,7 +28,8 @@ func NewHTTPDriver(endpoint string, check *v1.TlsCheck) (Driver, error) {
 		client: &http.Client{
 			Timeout: 30 * time.Second,
 		},
-		check: check,
+		check:     check,
+		httpCheck: httpCheck,
 	}, nil
 }
 
@@ -69,6 +73,21 @@ func (h *HTTPDriver) Check() (*CheckResult, error) {
 	}
 
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		if h.httpCheck != nil && h.httpCheck.BodyContains != "" {
+			bodyBytes, err := io.ReadAll(resp.Body)
+			if err != nil {
+				result.Success = false
+				result.Error = err
+				result.Message = fmt.Sprintf("HTTP check failed to read body: %v", err)
+				return result, nil
+			}
+			if !strings.Contains(string(bodyBytes), h.httpCheck.BodyContains) {
+				result.Success = false
+				result.Message = fmt.Sprintf("HTTP check failed: body does not contain '%s' (status: %d, response time: %v)", h.httpCheck.BodyContains, resp.StatusCode, duration)
+				return result, nil
+			}
+		}
+
 		result.Success = true
 		result.Message = fmt.Sprintf("HTTP check successful (status: %d, response time: %v)", resp.StatusCode, duration)
 	} else {

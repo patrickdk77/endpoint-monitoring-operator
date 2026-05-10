@@ -10,6 +10,11 @@ type HttpJsonCheck struct {
 	JsonAssertions     map[string]string `json:"jsonAssertions"`               // key: JSONPath-like dot string, value: expected value
 }
 
+// HttpCheck defines expected values from a HTTP response
+type HttpCheck struct {
+	BodyContains string `json:"bodyContains,omitempty"` // optional string to match in body
+}
+
 type SmtpCheck struct {
 	Helo            string    `json:"helo,omitempty"`
 	Tls             bool      `json:"tls,omitempty"`
@@ -48,6 +53,7 @@ type EndpointMonitorSpec struct {
 	Endpoint      string         `json:"endpoint"`      // target service URL
 	CheckInterval int            `json:"checkInterval"` // in seconds
 	Notify        NotifyConfig   `json:"notify"`
+	HttpCheck     *HttpCheck     `json:"httpCheck,omitempty"`     // only relevant for driver = "http"
 	HttpJsonCheck *HttpJsonCheck `json:"httpJsonCheck,omitempty"` // only relevant for driver = "http-json"
 	SmtpCheck     *SmtpCheck     `json:"smtpCheck,omitempty"`     // only relevant for driver = "smtp"
 	RedisCheck    *RedisCheck    `json:"redisCheck,omitempty"`    // only relevant for driver = "redis"

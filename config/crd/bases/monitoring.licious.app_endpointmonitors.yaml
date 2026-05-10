@@ -55,6 +55,12 @@ spec:
                 type: string
               endpoint:
                 type: string
+              httpCheck:
+                description: HttpCheck defines expected values from a HTTP response
+                properties:
+                  bodyContains:
+                    type: string
+                type: object
               httpJsonCheck:
                 description: HttpJsonCheck defines expected JSON field values from
                   a HTTP response

@@ -101,7 +101,7 @@ func NewDriver(driverType string, endpoint string, monitor *v1alpha1.EndpointMon
 func (f *DriverFactory) CreateDriver(driverType string, endpoint string, monitor *v1alpha1.EndpointMonitor, namespace string, client client.Client) (driver.Driver, error) {
 	switch driverType {
 	case "http":
-		return driver.NewHTTPDriver(endpoint, monitor.Spec.TlsCheck)
+		return driver.NewHTTPDriver(endpoint, monitor.Spec.TlsCheck, monitor.Spec.HttpCheck)
 	case "http-json":
 		return driver.NewHTTPJSONDriver(endpoint, monitor.Spec.HttpJsonCheck)
 	case "smtp":
