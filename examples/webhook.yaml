@@ -13,6 +13,26 @@ spec:
       webhookUrl: https://hooks.slack.com/services/XXXXXXXXX/YYYYYYYYY/ZZZZZZZZZZZZ
       contentType: "application/json"
       contents: |-
-        {"text": "{{if eq .Status "success"}}:white_check_mark:{{else}}{{if eq .Status "failure"}}:x:{{else}}:information_source:{{end}}{{end}} {{.Driver}} monitor for {{.Endpoint}} is {{.Healthy}}, previously was {{.LastStatus}} for {{.StatusTime}}"}
+        {{- $icon := "ℹ️" -}}
+        {{- if eq .Status "success" -}}{{- $icon = "✅" -}}{{- else if eq .Status "failure" -}}{{- $icon = "❌" -}}{{- end -}}
+        {
+          "blocks": [
+            {
+              "type": "header",
+              "text": {
+                "type": "plain_text",
+                "text": {{printf "%q" (printf "%s %s %s changed status to %s" $icon .Driver .Endpoint .Status)}},
+                "emoji": true
+              }
+            },
+            {
+              "type": "section",
+              "text": {
+                "type": "plain_text",
+                "text": {{printf "%q" (printf "%s" .Message)}}
+              }
+            }
+          ]
+        }
       alertOn:
-        - change
+      - change
