@@ -84,6 +84,7 @@ func (r *EndpointMonitorReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		Name:             monitor.Name,
 		Message:          result.Message,
 		Response:         result.ResponseTime.String(),
+		ResponseTimeMs:   result.ResponseTime.Milliseconds(),
 		CurrentTime:      now.String(),
 		Namespace:        req.Namespace,
 		AlertMessage:     "",

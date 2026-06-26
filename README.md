@@ -57,7 +57,7 @@ spec:
     slack:
       enabled: true
       webhookUrl: https://hooks.slack.com/services/XXX/YYY/ZZZ
-      alertOn:                       # optional – defaults to ["failure"]
+      alertOn:                       # optional - defaults to ["failure"]
         - success
         - failure
 ```
@@ -65,11 +65,11 @@ spec:
 Key fields in the spec (abridged):
 
 ```
-driver – which probe implementation to use
-endpoint – URL/host/cluster depending on driver
-checkInterval – seconds between probes
-notify – list of one or more notifiers (Slack, e-mail)
-Driver-specific blocks – e.g. httpJsonCheck for http-json driver
+driver - which probe implementation to use
+endpoint - URL/host/cluster depending on driver
+checkInterval - seconds between probes
+notify - list of one or more notifiers (Slack, e-mail)
+Driver-specific blocks - e.g. httpJsonCheck for http-json driver
 ```
 
 See the Go type definitions for the full schema.
@@ -86,6 +86,87 @@ See the Go type definitions for the full schema.
 #### 2. Deep health-check on a JSON endpoint
 ```kubectl apply -f examples/http-json.yaml```
 
+#### 3. Publish check results to Valkey for status dashboards
+```kubectl apply -f examples/valkey-secret.yaml -f examples/valkey.yaml```
+
+---
+
+## Valkey status notifier
+
+The `valkey` notifier writes per-check samples into a co-located Valkey 9.x instance using `HSET` with per-field expiration (`HEXPIRE`). Each monitor can publish to one or more named dashboards.
+
+```yaml
+notify:
+  valkey:
+    enabled: true
+    endpoint: valkey.example.com:6379
+    tls: true
+    db: 0
+    dashboards:
+      - platform
+    name: api-status          # optional; keep identical across locations
+    retentionDays: 90
+    secretRef:
+      name: valkey-credentials  # keys: username (optional), password
+```
+
+Deploy one Valkey instance per monitoring location. Operators are location-agnostic; the dashboard app names each Valkey server as a location. Use the same `name` (or monitor name) and `dashboards` across locations for a service to aggregate correctly.
+
+---
+
+## Status dashboard app
+
+The `dashboard/` module is a separate Go application that:
+
+* Reads raw samples from every configured location Valkey (read-only)
+* Rolls up hourly per-location and cross-location summaries into its primary Valkey
+* Serves githubstatus-style overview and detail pages over HTTP
+
+Configure locations in `dashboard/config.example.yaml` (exactly one `primary: true` writable instance):
+
+```yaml
+locations:
+  - name: us-east
+    addr: valkey-us-east.example.com:6379
+    tls: true
+    username: default
+    password: changeme
+    db: 0
+    primary: true
+  - name: eu-west
+    addr: valkey-eu-west.example.com:6379
+    tls: true
+    primary: false
+```
+
+Build with:
+
+```bash
+cd dashboard && go build -o dashboard ./cmd/dashboard
+```
+
+For Kubernetes, the manifests are split so the app and its per-location config can be deployed independently:
+
+* `dashboard/deploy/deployment.yaml` - the reusable Deployment + Service
+* `dashboard/deploy/config.yaml` - the per-location ConfigMap + Secret (edit per site)
+
+```bash
+kubectl apply -f dashboard/deploy/config.yaml -f dashboard/deploy/deployment.yaml
+```
+
+---
+
+## Supported notifiers
+
+| Notifier | Purpose |
+|----------|---------|
+| `slack` | Slack webhook alerts |
+| `email` | Email alerts (SES/SMTP) |
+| `discord` | Discord webhook alerts |
+| `webhook` | Custom HTTP webhook |
+| `valkey` | Status-page time series storage |
+
+---
 
 ## Roadmap
 

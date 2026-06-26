@@ -1,0 +1,21 @@
+httpAddr: ":8080"
+rollupInterval: 5m
+defaultRetentionDays: 90
+locations:
+  # Primary: local Valkey for this dashboard instance. Rollups are written here only.
+  - name: us-east
+    addr: valkey-us-east.example.com:6379
+    tls: true
+    username: default
+    password: changeme
+    db: 0
+    primary: true
+  # Read-only: remote location Valkeys are read for raw samples only.
+  - name: eu-west
+    addr: valkey-eu-west.example.com:6379
+    tls: true
+    username: default
+    # password can also be set via env VALKEY_PASSWORD_EU_WEST
+    password: changeme
+    db: 0
+    primary: false

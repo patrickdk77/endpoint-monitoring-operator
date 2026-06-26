@@ -1,0 +1,34 @@
+# Location-specific config. This differs per dashboard deployment site, so it is
+# kept separate from deployment.yaml (the reusable app manifests).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: endpoint-status-dashboard-config
+data:
+  config.yaml: |
+    httpAddr: ":8080"
+    rollupInterval: 5m
+    defaultRetentionDays: 90
+    locations:
+      - name: us-east
+        addr: valkey-us-east:6379
+        tls: true
+        username: default
+        db: 0
+        primary: true
+      - name: eu-west
+        addr: valkey-eu-west:6379
+        tls: true
+        username: default
+        db: 0
+        primary: false
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: endpoint-status-dashboard-valkey
+type: Opaque
+stringData:
+  # Referenced via env in the Deployment (VALKEY_PASSWORD_<LOCATION>).
+  US_EAST: changeme
+  EU_WEST: changeme

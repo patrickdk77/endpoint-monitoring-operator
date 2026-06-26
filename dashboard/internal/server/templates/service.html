@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>{{.ServiceID}} · {{.Dashboard}}</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header><h1>{{if .Meta.Name}}{{.Meta.Name}}{{else}}{{.ServiceID}}{{end}}</h1></header>
+  <main>
+    <p><a href="/{{.Dashboard}}">Back to {{.Dashboard}}</a></p>
+    <div class="card">
+      <div class="meta">{{.Meta.Driver}} · {{.Meta.Endpoint}}</div>
+      <h3>Last 90 days</h3>
+      <div class="timeline">
+        {{range .Daily}}<div class="bar bar-{{.Status}}" title="{{.Label}}: {{.Status}}"></div>{{end}}
+      </div>
+    </div>
+    <div class="card">
+      <h3>Last 24 hours</h3>
+      <div class="hour-grid">
+        {{range .Hours}}
+        <div class="hour-cell">
+          <div><strong>{{.Hour}}</strong></div>
+          <span class="status status-{{.Status}}">{{.Status}}</span>
+          {{if .Detail.PerLocation}}
+          {{range $loc, $r := .Detail.PerLocation}}
+          <div class="loc-block">
+            <div><strong>{{$loc}}</strong> <span class="status status-{{$r.Status}}">{{$r.Status}}</span></div>
+            <div class="meta">{{$r.Success}} ok / {{$r.Failure}} fail · avg {{printf "%.0f" $r.AvgMs}}ms</div>
+            {{if $r.Messages}}
+            <ul>
+              {{range $r.Messages}}<li>{{.Message}} ({{.Ms}}ms)</li>{{end}}
+            </ul>
+            {{end}}
+          </div>
+          {{end}}
+          {{end}}
+        </div>
+        {{end}}
+      </div>
+    </div>
+  </main>
+</body>
+</html>

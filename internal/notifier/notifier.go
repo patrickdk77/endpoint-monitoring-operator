@@ -19,6 +19,7 @@ type NoticeValues struct {
 	Healthy          string
 	Name             string
 	Response         string
+	ResponseTimeMs   int64
 	LastStatus       string
 	LastChecked      string
 	LastStatusChange string

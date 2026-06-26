@@ -68,7 +68,7 @@ Add support in NewNotifier() in `pkg/factory/factory.go`
 
 2. Follow Kubernetes naming conventions for types and CRDs
 
-3. Keep logic minimal in the Reconciler – offload work to factory/driver layers
+3. Keep logic minimal in the Reconciler - offload work to factory/driver layers
 
 4. No hardcoded secrets/tokens; use Kubernetes SecretRef
 

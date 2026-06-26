@@ -3,7 +3,7 @@
 # To re-generate a bundle for another specific version without changing the standard setup, you can:
 # - use the VERSION as arg of the bundle target (e.g make bundle VERSION=0.0.2)
 # - use environment variables to overwrite this value (e.g export VERSION=0.0.2)
-VERSION ?= 0.0.3h
+VERSION ?= 0.0.3i
 
 # CHANNELS define the bundle channels used in the bundle.
 # Add a new line here if you would like to change its default config. (E.g CHANNELS = "candidate,fast,stable")
@@ -51,6 +51,9 @@ endif
 OPERATOR_SDK_VERSION ?= v1.40.0
 # Image URL to use all building/pushing image targets
 IMG ?= docker.patrickdk.com/dswett/endpoint-monitoring-operator:$(VERSION)
+
+# DASHBOARD_IMG is the image URL for the status dashboard application.
+DASHBOARD_IMG ?= docker.patrickdk.com/dswett/endpoint-status-dashboard:$(VERSION)
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -156,6 +159,14 @@ docker-build: ## Build docker image with the manager.
 docker-push: ## Push docker image with the manager.
 	$(CONTAINER_TOOL) push ${IMG}
 
+.PHONY: dashboard-docker-build
+dashboard-docker-build: ## Build docker image with the status dashboard.
+	$(CONTAINER_TOOL) build --build-arg VERSION=$(VERSION) -t ${DASHBOARD_IMG} dashboard
+
+.PHONY: dashboard-docker-push
+dashboard-docker-push: ## Push docker image with the status dashboard.
+	$(CONTAINER_TOOL) push ${DASHBOARD_IMG}
+
 # PLATFORMS defines the target platforms for the manager image be built to provide support to multiple
 # architectures. (i.e. make docker-buildx IMG=myregistry/mypoperator:0.0.1). To use this option you need to:
 # - be able to use docker buildx. More info: https://docs.docker.com/build/buildx/
@@ -164,14 +175,16 @@ docker-push: ## Push docker image with the manager.
 # To adequately provide solutions that are compatible with multiple platforms, you should consider using this option.
 PLATFORMS ?= linux/arm64,linux/amd64
 .PHONY: docker-buildx
-docker-buildx: ## Build and push docker image for the manager for cross-platform support
+docker-buildx: ## Build and push both the manager and dashboard images for cross-platform support
 	# copy existing Dockerfile and insert --platform=${BUILDPLATFORM} into Dockerfile.cross, and preserve the original Dockerfile
 	sed -e '1 s/\(^FROM\)/FROM --platform=\$$\{BUILDPLATFORM\}/; t' -e ' 1,// s//FROM --platform=\$$\{BUILDPLATFORM\}/' Dockerfile > Dockerfile.cross
+	sed -e '1 s/\(^FROM\)/FROM --platform=\$$\{BUILDPLATFORM\}/; t' -e ' 1,// s//FROM --platform=\$$\{BUILDPLATFORM\}/' dashboard/Dockerfile > dashboard/Dockerfile.cross
 	#- $(CONTAINER_TOOL) buildx create --name endpoint-monitoring-operator-builder
 	#$(CONTAINER_TOOL) buildx use endpoint-monitoring-operator-builder
 	- $(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) --build-arg VERSION=$(VERSION) --tag ${IMG} -f Dockerfile.cross .
+	- $(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) --build-arg VERSION=$(VERSION) --tag ${DASHBOARD_IMG} -f dashboard/Dockerfile.cross dashboard
 	#- $(CONTAINER_TOOL) buildx rm endpoint-monitoring-operator-builder
-	rm Dockerfile.cross
+	rm Dockerfile.cross dashboard/Dockerfile.cross
 
 .PHONY: build-installer
 build-installer: manifests generate kustomize ## Generate a consolidated YAML with CRDs and deployment.

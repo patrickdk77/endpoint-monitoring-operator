@@ -1,0 +1,24 @@
+apiVersion: monitoring.licious.app/v1alpha1
+kind: EndpointMonitor
+metadata:
+  name: api-status
+  namespace: endpoint-monitoring-operator-system
+spec:
+  driver: http
+  endpoint: https://api.example.com/v1/status
+  checkInterval: 30
+  notify:
+    valkey:
+      enabled: true
+      endpoint: valkey.example.com:6379
+      tls: true
+      db: 0
+      dashboards:
+        - platform
+        - api
+      # Overrides the service identity stored in Valkey (keys + dashboard display name).
+      # Keep identical across locations so the same logical service aggregates together.
+      name: api-status
+      retentionDays: 90
+      secretRef:
+        name: valkey-credentials

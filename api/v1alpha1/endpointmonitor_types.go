@@ -68,6 +68,19 @@ type NotifyConfig struct {
 	Email   *EmailConfig   `json:"email,omitempty"`
 	Discord *DiscordConfig `json:"discord,omitempty"`
 	Webhook *WebhookConfig `json:"webhook,omitempty"`
+	Valkey  *ValkeyConfig  `json:"valkey,omitempty"`
+}
+
+// ValkeyConfig defines Valkey status-page notifier config
+type ValkeyConfig struct {
+	Enabled       bool      `json:"enabled"`
+	Endpoint      string    `json:"endpoint"`
+	Tls           bool      `json:"tls,omitempty"`
+	SecretRef     SecretRef `json:"secretRef,omitempty"`
+	Dashboards    []string  `json:"dashboards"`
+	Name          string    `json:"name,omitempty"` // overrides the monitor name used as the service identity in Valkey; keep consistent across locations to aggregate the same service
+	RetentionDays *int      `json:"retentionDays,omitempty"`
+	DB            int       `json:"db,omitempty"`
 }
 
 // WebhookConfig defines Webhook notifier config

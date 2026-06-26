@@ -153,6 +153,38 @@ spec:
                     - enabled
                     - webhookUrl
                     type: object
+                  valkey:
+                    description: ValkeyConfig defines Valkey status-page notifier
+                      config
+                    properties:
+                      dashboards:
+                        items:
+                          type: string
+                        type: array
+                      db:
+                        type: integer
+                      enabled:
+                        type: boolean
+                      endpoint:
+                        type: string
+                      name:
+                        type: string
+                      retentionDays:
+                        type: integer
+                      secretRef:
+                        properties:
+                          name:
+                            type: string
+                        required:
+                        - name
+                        type: object
+                      tls:
+                        type: boolean
+                    required:
+                    - dashboards
+                    - enabled
+                    - endpoint
+                    type: object
                   webhook:
                     description: WebhookConfig defines Webhook notifier config
                     properties:

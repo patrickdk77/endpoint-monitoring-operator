@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: endpoint-status-dashboard
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: endpoint-status-dashboard
+  template:
+    metadata:
+      labels:
+        app: endpoint-status-dashboard
+    spec:
+      containers:
+        - name: dashboard
+          image: endpoint-status-dashboard:latest
+          args: ["-config", "/config/config.yaml"]
+          ports:
+            - containerPort: 8080
+          env:
+            - name: VALKEY_PASSWORD_US_EAST
+              valueFrom:
+                secretKeyRef:
+                  name: endpoint-status-dashboard-valkey
+                  key: US_EAST
+            - name: VALKEY_PASSWORD_EU_WEST
+              valueFrom:
+                secretKeyRef:
+                  name: endpoint-status-dashboard-valkey
+                  key: EU_WEST
+          volumeMounts:
+            - name: config
+              mountPath: /config
+      volumes:
+        - name: config
+          configMap:
+            name: endpoint-status-dashboard-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: endpoint-status-dashboard
+spec:
+  selector:
+    app: endpoint-status-dashboard
+  ports:
+    - port: 80
+      targetPort: 8080

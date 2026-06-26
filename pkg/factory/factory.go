@@ -9,6 +9,7 @@ import (
 	"github.com/patrickdk77/endpoint-monitoring-operator/internal/notifier/discord"
 	"github.com/patrickdk77/endpoint-monitoring-operator/internal/notifier/email"
 	"github.com/patrickdk77/endpoint-monitoring-operator/internal/notifier/slack"
+	"github.com/patrickdk77/endpoint-monitoring-operator/internal/notifier/valkey"
 	"github.com/patrickdk77/endpoint-monitoring-operator/internal/notifier/webhook"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -60,6 +61,14 @@ func (f *NotifierFactory) CreateNotifier(config *v1alpha1.NotifyConfig) (notifie
 			return nil, fmt.Errorf("failed to create Webhook notifier: %w", err)
 		}
 		notifiers = append(notifiers, webhookNotifier)
+	}
+
+	if config.Valkey != nil && config.Valkey.Enabled {
+		valkeyNotifier, err := valkey.New(config.Valkey)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create Valkey notifier: %w", err)
+		}
+		notifiers = append(notifiers, valkeyNotifier)
 	}
 
 	if len(notifiers) == 0 {
