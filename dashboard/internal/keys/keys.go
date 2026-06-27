@@ -23,3 +23,7 @@ func RollupLocationHour(dash, svc, loc string) string {
 func RollupAggregateHour(dash, svc string) string {
 	return fmt.Sprintf("emo:%s:%s:rollup:agg:hour", dash, svc)
 }
+
+func RollupDaily(dash, svc string) string {
+	return fmt.Sprintf("emo:%s:%s:rollup:daily", dash, svc)
+}

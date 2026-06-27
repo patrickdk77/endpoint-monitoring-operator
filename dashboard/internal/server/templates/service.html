@@ -7,41 +7,70 @@
   <title>{{.Display}} · {{.Dashboard}}</title>
   <link rel="stylesheet" href="/static/style.css">
 </head>
-<body>
+<body data-dash="{{.Dashboard}}" data-service="{{.ServiceID}}">
   <header><h1>{{if .Group}}<span class="group-label">{{.Group}}</span> {{end}}{{.Display}}</h1></header>
   <main>
     <p><a href="/{{.Dashboard}}">Back to {{.Dashboard}}</a></p>
     <div class="card">
       <div class="meta">{{.Meta.Driver}} · {{.Meta.Endpoint}}</div>
-      <h3>Last 90 days</h3>
+      <div class="section-head">
+        <h3>Last 90 days</h3>
+        <div class="sla-block" title="Uptime summaries">
+          <div class="sla-item"><span class="sla-label">7d</span>
+            <span class="sla" id="sla7">&mdash;</span>
+          </div>
+          <div class="sla-item"><span class="sla-label">30d</span><span class="sla" id="sla30">&mdash;</span></div>
+          <div class="sla-item"><span class="sla-label">365d</span><span class="sla" id="sla365">&mdash;</span></div>
+        </div>
+      </div>
       <div class="timeline">
-        {{range .Daily}}<div class="bar bar-{{.Status}}" title="{{.Label}}: {{.Status}}"></div>{{end}}
+        {{range .Daily}}<a class="bar bar-{{.Status}}" href="/{{$.Dashboard}}/{{$.ServiceID}}?day={{.Date}}" title="{{.Label}}: {{.Status}} (view this day)"></a>{{end}}
       </div>
     </div>
     <div class="card">
-      <h3>Last 24 hours</h3>
-      <div class="hour-grid">
-        {{range .Hours}}
-        <div class="hour-cell">
-          <div><strong>{{.Hour}}</strong></div>
-          <span class="status status-{{.Status}}">{{.Status}}</span>
-          {{if .Detail.PerLocation}}
-          {{range $loc, $r := .Detail.PerLocation}}
-          <div class="loc-block">
-            <div><strong>{{$loc}}</strong> <span class="status status-{{$r.Status}}">{{$r.Status}}</span></div>
-            <div class="meta">{{$r.Success}} ok / {{$r.Failure}} fail · avg {{printf "%.0f" $r.AvgMs}}ms</div>
-            {{if $r.Messages}}
-            <ul>
-              {{range $r.Messages}}<li>{{.Message}} ({{.Ms}}ms)</li>{{end}}
-            </ul>
-            {{end}}
-          </div>
-          {{end}}
-          {{end}}
-        </div>
-        {{end}}
+      <div class="section-head">
+        <h3>Response time</h3>
       </div>
+      <div id="controls">
+        <label>Location: <select id="location-select"><option value="all">All locations</option></select></label>
+        <div id="range-buttons">
+          <button data-range="1d">Prev day</button>
+          <button data-range="7d">Week</button>
+          <button data-range="30d">Month</button>
+          <button data-range="60d">2 months</button>
+          <button data-range="90d">3 months</button>
+        </div>
+      </div>
+      <canvas id="rt-chart" width="800" height="200"></canvas>
+      <div id="rt-stats" class="meta"></div>
+    </div>
+    <div class="card">
+      <div class="section-head">
+        <h3>{{.WindowsTitle}}</h3>
+        {{if .SelectedDay}}<a href="/{{.Dashboard}}/{{.ServiceID}}">Back to latest</a>{{end}}
+      </div>
+      {{if .Windows}}
+      <ul class="incidents">
+        {{range .Windows}}
+        <li class="incident">
+          <div class="incident-head">
+            <span class="incident-left">
+              <span class="status status-{{if .Ongoing}}major_outage{{else}}degraded{{end}}">{{if .Ongoing}}ongoing{{else}}resolved{{end}}</span>
+              <span class="incident-msg">{{.Message}}</span>
+            </span>
+            <span class="incident-locs" title="Reporting locations">{{.Locations}}</span>
+          </div>
+          <div class="meta">
+            {{.Start}} &rarr; {{.End}} · {{.Duration}} · {{.Count}} failed check{{if ne .Count 1}}s{{end}}
+          </div>
+        </li>
+        {{end}}
+      </ul>
+      {{else}}
+      <p class="meta">No failures recorded in this window.</p>
+      {{end}}
     </div>
   </main>
+  <script src="/static/service.js"></script>
 </body>
 </html>
