@@ -1,18 +1,23 @@
 package server
 
 import (
+	"compress/flate"
+	"compress/gzip"
 	"context"
 	"embed"
 	"encoding/json"
 	"fmt"
+	"hash/crc32"
 	"html"
 	"html/template"
+	"io"
 	"io/fs"
 	"math"
 	"net/http"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/patrickdk77/endpoint-monitoring-operator/dashboard/internal/status"
@@ -32,6 +37,16 @@ type Server struct {
 }
 
 func New(s *store.Store, retentionDays int) (*Server, error) {
+	staticFSRoot, err := fs.Sub(staticFS, "static")
+	if err != nil {
+		return nil, err
+	}
+
+	hashes, err := computeStaticHashes(staticFSRoot)
+	if err != nil {
+		return nil, err
+	}
+
 	tmpl := template.New("").Funcs(template.FuncMap{
 		"formatSLA": func(s string) template.HTML {
 			if s == "" {
@@ -54,13 +69,44 @@ func New(s *store.Store, retentionDays int) (*Server, error) {
 			}
 			return template.HTML(html.EscapeString(s))
 		},
+		"assetURL": func(name string) string {
+			return assetURL(name, hashes)
+		},
 	})
-	var err error
-	tmpl, err = tmpl.ParseFS(templateFS, "templates/*.html")
-	if err != nil {
-		return nil, err
+	var err2 error
+	tmpl, err2 = tmpl.ParseFS(templateFS, "templates/*.html")
+	if err2 != nil {
+		return nil, err2
 	}
 	return &Server{store: s, retention: retentionDays, templates: tmpl}, nil
+}
+
+func computeStaticHashes(fsys fs.FS) (map[string]string, error) {
+	hashes := map[string]string{}
+	if err := fs.WalkDir(fsys, ".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		b, err := fs.ReadFile(fsys, path)
+		if err != nil {
+			return err
+		}
+		hashes[path] = fmt.Sprintf("%08x", crc32.ChecksumIEEE(b))
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	return hashes, nil
+}
+
+func assetURL(name string, hashes map[string]string) string {
+	if hash, ok := hashes[name]; ok {
+		return "/static/" + name + "?v=" + hash
+	}
+	return "/static/" + name
 }
 
 func (s *Server) Handler() http.Handler {
@@ -76,7 +122,7 @@ func (s *Server) Handler() http.Handler {
 	pageMux.HandleFunc("GET /{dash}", s.handleDashboard)
 	pageMux.HandleFunc("GET /{dash}/{name}", s.handleService)
 
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case strings.HasPrefix(r.URL.Path, "/static/"):
 			staticHandler.ServeHTTP(w, r)
@@ -85,6 +131,148 @@ func (s *Server) Handler() http.Handler {
 		default:
 			pageMux.ServeHTTP(w, r)
 		}
+	})
+
+	return NoCache(Compress(handler))
+}
+
+type compressResponseWriter struct {
+	http.ResponseWriter
+	compressor  io.WriteCloser
+	wroteHeader bool
+	encoding    string
+}
+
+var (
+	gzipPool = sync.Pool{
+		New: func() interface{} {
+			return gzip.NewWriter(io.Discard)
+		},
+	}
+	flatePool = sync.Pool{
+		New: func() interface{} {
+			w, _ := flate.NewWriter(io.Discard, flate.DefaultCompression)
+			return w
+		},
+	}
+)
+
+func isCompressible(contentType string) bool {
+	contentType = strings.Split(contentType, ";")[0]
+	contentType = strings.TrimSpace(contentType)
+	switch contentType {
+	case "text/html", "text/css", "text/plain", "text/xml", "text/javascript":
+		return true
+	case "application/javascript", "application/x-javascript", "application/json", "application/xml":
+		return true
+	case "image/svg+xml":
+		return true
+	}
+	return false
+}
+
+func (w *compressResponseWriter) WriteHeader(code int) {
+	if w.wroteHeader {
+		return
+	}
+	w.wroteHeader = true
+
+	contentType := w.Header().Get("Content-Type")
+
+	if code == http.StatusNoContent || code == http.StatusNotModified ||
+		w.Header().Get("Content-Encoding") != "" || !isCompressible(contentType) {
+		w.encoding = ""
+		w.ResponseWriter.WriteHeader(code)
+		return
+	}
+
+	w.Header().Set("Content-Encoding", w.encoding)
+	w.Header().Add("Vary", "Accept-Encoding")
+	w.Header().Del("Content-Length")
+
+	if w.encoding == "gzip" {
+		enc := gzipPool.Get().(*gzip.Writer)
+		enc.Reset(w.ResponseWriter)
+		w.compressor = enc
+	} else if w.encoding == "deflate" {
+		enc := flatePool.Get().(*flate.Writer)
+		enc.Reset(w.ResponseWriter)
+		w.compressor = enc
+	}
+
+	w.ResponseWriter.WriteHeader(code)
+}
+
+func (w *compressResponseWriter) Write(b []byte) (int, error) {
+	if !w.wroteHeader {
+		if w.Header().Get("Content-Type") == "" {
+			w.Header().Set("Content-Type", http.DetectContentType(b))
+		}
+		w.WriteHeader(http.StatusOK)
+	}
+	if w.encoding != "" && w.compressor != nil {
+		return w.compressor.Write(b)
+	}
+	return w.ResponseWriter.Write(b)
+}
+
+func (w *compressResponseWriter) Flush() {
+	if w.compressor != nil {
+		if flusher, ok := w.compressor.(interface{ Flush() error }); ok {
+			flusher.Flush()
+		}
+	}
+	if flusher, ok := w.ResponseWriter.(http.Flusher); ok {
+		flusher.Flush()
+	}
+}
+
+func Compress(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.Header.Get("Connection"), "Upgrade") {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		accept := r.Header.Get("Accept-Encoding")
+		encoding := ""
+		if strings.Contains(accept, "gzip") {
+			encoding = "gzip"
+		} else if strings.Contains(accept, "deflate") {
+			encoding = "deflate"
+		}
+
+		if encoding == "" {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		cw := &compressResponseWriter{
+			ResponseWriter: w,
+			encoding:       encoding,
+		}
+
+		next.ServeHTTP(cw, r)
+
+		if cw.encoding != "" && cw.compressor != nil {
+			cw.compressor.Close()
+			if cw.encoding == "gzip" {
+				gzipPool.Put(cw.compressor)
+			} else if cw.encoding == "deflate" {
+				flatePool.Put(cw.compressor)
+			}
+		}
+	})
+}
+
+func NoCache(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/.well-known/") || strings.HasPrefix(r.URL.Path, "/static/") || strings.HasPrefix(r.URL.Path, "/robots.txt") {
+			w.Header().Set("Cache-Control", "public, max-age=2600000")
+		} else {
+			w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+		}
+		next.ServeHTTP(w, r)
 	})
 }
 

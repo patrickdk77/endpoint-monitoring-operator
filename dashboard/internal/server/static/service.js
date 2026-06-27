@@ -6,6 +6,13 @@
 
   function formatPct(s){ return s === '' ? '-' : s }
 
+  function renderSLA(value){
+    if(!value) return '—'
+    const m = value.match(/^(\d+(?:\.\d+)?)%$/)
+    if(m) return '<span class="sla-num">'+m[1]+'</span><span class="sla-percent">%</span>'
+    return value
+  }
+
   function slaClass(value){
     const m = value && value.match(/^(\d+(?:\.\d+)?)%$/)
     if(!m) return ''

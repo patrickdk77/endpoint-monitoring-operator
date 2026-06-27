@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta http-equiv="refresh" content="300">
   <title>{{.Display}} · {{.Dashboard}}</title>
-  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="{{assetURL "style.css"}}">
 </head>
 <body data-dash="{{.Dashboard}}" data-service="{{.ServiceID}}">
   <header><h1>{{if .Group}}<span class="group-label">{{.Group}}</span> {{end}}{{.Display}}</h1></header>
@@ -78,6 +78,6 @@
       {{end}}
     </div>
   </main>
-  <script src="/static/service.js"></script>
+  <script src="{{assetURL "service.js"}}"></script>
 </body>
 </html>
