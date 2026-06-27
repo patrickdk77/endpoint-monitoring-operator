@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"compress/flate"
 	"compress/gzip"
 	"context"
@@ -13,7 +14,9 @@ import (
 	"io"
 	"io/fs"
 	"math"
+	"mime"
 	"net/http"
+	"path"
 	"sort"
 	"strconv"
 	"strings"
@@ -30,10 +33,17 @@ var templateFS embed.FS
 //go:embed static/*
 var staticFS embed.FS
 
+type staticAsset struct {
+	content     []byte
+	gzipped     []byte
+	contentType string
+}
+
 type Server struct {
-	store     *store.Store
-	retention int
-	templates *template.Template
+	store        *store.Store
+	retention    int
+	templates    *template.Template
+	staticAssets map[string]staticAsset
 }
 
 func New(s *store.Store, retentionDays int) (*Server, error) {
@@ -42,9 +52,14 @@ func New(s *store.Store, retentionDays int) (*Server, error) {
 		return nil, err
 	}
 
-	hashes, err := computeStaticHashes(staticFSRoot)
+	assets, err := loadStaticAssets(staticFSRoot)
 	if err != nil {
 		return nil, err
+	}
+
+	hashes := map[string]string{}
+	for name, asset := range assets {
+		hashes[name] = fmt.Sprintf("%08x", crc32.ChecksumIEEE(asset.content))
 	}
 
 	tmpl := template.New("").Funcs(template.FuncMap{
@@ -78,28 +93,41 @@ func New(s *store.Store, retentionDays int) (*Server, error) {
 	if err2 != nil {
 		return nil, err2
 	}
-	return &Server{store: s, retention: retentionDays, templates: tmpl}, nil
+	return &Server{store: s, retention: retentionDays, templates: tmpl, staticAssets: assets}, nil
 }
 
-func computeStaticHashes(fsys fs.FS) (map[string]string, error) {
-	hashes := map[string]string{}
-	if err := fs.WalkDir(fsys, ".", func(path string, d fs.DirEntry, err error) error {
+func loadStaticAssets(fsys fs.FS) (map[string]staticAsset, error) {
+	assets := map[string]staticAsset{}
+	if err := fs.WalkDir(fsys, ".", func(name string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 		if d.IsDir() {
 			return nil
 		}
-		b, err := fs.ReadFile(fsys, path)
+		content, err := fs.ReadFile(fsys, name)
 		if err != nil {
 			return err
 		}
-		hashes[path] = fmt.Sprintf("%08x", crc32.ChecksumIEEE(b))
+		contentType := mime.TypeByExtension(path.Ext(name))
+		if contentType == "" {
+			contentType = http.DetectContentType(content)
+		}
+		var gzipBuf bytes.Buffer
+		gz := gzip.NewWriter(&gzipBuf)
+		if _, err := gz.Write(content); err != nil {
+			gz.Close()
+			return err
+		}
+		if err := gz.Close(); err != nil {
+			return err
+		}
+		assets[name] = staticAsset{content: content, gzipped: gzipBuf.Bytes(), contentType: contentType}
 		return nil
 	}); err != nil {
 		return nil, err
 	}
-	return hashes, nil
+	return assets, nil
 }
 
 func assetURL(name string, hashes map[string]string) string {
@@ -110,8 +138,7 @@ func assetURL(name string, hashes map[string]string) string {
 }
 
 func (s *Server) Handler() http.Handler {
-	static, _ := fs.Sub(staticFS, "static")
-	staticHandler := http.StripPrefix("/static/", http.FileServer(http.FS(static)))
+	staticHandler := s.staticHandler()
 
 	apiMux := http.NewServeMux()
 	apiMux.HandleFunc("GET /dashboards", s.handleAPIDashboards)
@@ -134,6 +161,43 @@ func (s *Server) Handler() http.Handler {
 	})
 
 	return NoCache(Compress(handler))
+}
+
+func (s *Server) staticHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		clean := path.Clean(strings.TrimPrefix(r.URL.Path, "/static/"))
+		clean = strings.TrimPrefix(clean, "/")
+		if clean == "." || clean == "" || strings.HasPrefix(clean, "../") || strings.Contains(clean, "..") {
+			http.NotFound(w, r)
+			return
+		}
+
+		asset, ok := s.staticAssets[clean]
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+
+		selected := asset.content
+		encoding := ""
+		if isCompressible(asset.contentType) && strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
+			selected = asset.gzipped
+			encoding = "gzip"
+		}
+
+		w.Header().Set("Content-Type", asset.contentType)
+		w.Header().Set("Content-Length", strconv.Itoa(len(selected)))
+		if encoding != "" {
+			w.Header().Set("Content-Encoding", encoding)
+			w.Header().Add("Vary", "Accept-Encoding")
+		}
+
+		if r.Method == http.MethodHead {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		_, _ = w.Write(selected)
+	})
 }
 
 type compressResponseWriter struct {
