@@ -244,12 +244,12 @@ func (s *Server) handleService(w http.ResponseWriter, r *http.Request) {
 	// is supplied, show that calendar day's 24 hours instead.
 	from := now.Add(-24 * time.Hour).Truncate(time.Hour)
 	to := now
-	windowsTitle := "Failures (last 24 hours)"
+	windowsTitle := "Issues (last 24 hours)"
 	selectedDay := ""
 	if d, err := time.Parse("2006-01-02", r.URL.Query().Get("day")); err == nil {
 		from = d.UTC()
 		to = from.Add(24*time.Hour - time.Second)
-		windowsTitle = "Failures on " + from.Format("2006-01-02")
+		windowsTitle = "Issues on " + from.Format("2006-01-02")
 		selectedDay = from.Format("2006-01-02")
 	}
 

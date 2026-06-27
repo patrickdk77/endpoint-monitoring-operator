@@ -43,9 +43,12 @@ a:hover { text-decoration: underline; }
 .card-head { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
 .card-foot { display: flex; align-items: baseline; justify-content: space-between; gap: 0.75rem; margin-top: 0.5rem; }
 .card-foot .meta { margin-top: 0; }
-.section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 0.75rem; }
+.section-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 0.75rem; }
 .section-head h3 { margin: 0.5rem 0; }
-.sla { font-weight: 600; font-variant-numeric: tabular-nums; color: var(--operational); white-space: nowrap; }
+.sla { display: inline-block; font-weight: 600; font-variant-numeric: tabular-nums; font-size: 2rem; color: var(--operational); line-height: 1; }
+.sla-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.75rem; margin-top: 0.35rem; }
+.sla-card { background: rgba(255, 255, 255, 0.04); border: 1px solid var(--border); border-radius: 0.75rem; padding: 0.9rem 0.95rem; text-align: center; }
+.sla-card .sla-label { display: block; font-size: 0.8rem; color: var(--muted); letter-spacing: 0.04em; text-transform: uppercase; margin-bottom: 0.45rem; }
 
 @media (max-width: 768px) {
   .service-grid { grid-template-columns: 1fr; }
