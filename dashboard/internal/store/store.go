@@ -668,7 +668,7 @@ func (s *Store) UpdateSLAs(ctx context.Context, dash, svc string) error {
 
 	key := keys.Meta(dash, svc)
 	// Hset multiple fields
-	if err := s.primary.client.Do(ctx, s.primary.client.B().Hset().Key(key).FieldValue("sla7", sla7).FieldValue("sla30", sla30).FieldValue("sla365", sla365).Build()).Error(); err != nil {
+	if err := s.primary.client.Do(ctx, s.primary.client.B().Hset().Key(key).FieldValue().FieldValue("sla7", sla7).FieldValue("sla30", sla30).FieldValue("sla365", sla365).Build()).Error(); err != nil {
 		return err
 	}
 	return nil
