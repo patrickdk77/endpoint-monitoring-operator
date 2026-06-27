@@ -5,6 +5,7 @@ import (
 	"embed"
 	"encoding/json"
 	"fmt"
+	"html"
 	"html/template"
 	"io/fs"
 	"net/http"
@@ -29,7 +30,20 @@ type Server struct {
 }
 
 func New(s *store.Store, retentionDays int) (*Server, error) {
-	tmpl, err := template.ParseFS(templateFS, "templates/*.html")
+	tmpl := template.New("").Funcs(template.FuncMap{
+		"formatSLA": func(s string) template.HTML {
+			if s == "" {
+				return template.HTML("&mdash;")
+			}
+			if strings.HasSuffix(s, "%") {
+				num := strings.TrimSuffix(s, "%")
+				return template.HTML(fmt.Sprintf(`<span class="sla-num">%s</span><span class="sla-percent">%%</span>`, html.EscapeString(num)))
+			}
+			return template.HTML(html.EscapeString(s))
+		},
+	})
+	var err error
+	tmpl, err = tmpl.ParseFS(templateFS, "templates/*.html")
 	if err != nil {
 		return nil, err
 	}
@@ -331,9 +345,9 @@ func (s *Server) handleAPIOverview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	type item struct {
-		Service string   `json:"service"`
+		Service string     `json:"service"`
 		Meta    store.Meta `json:"meta"`
-		Daily   []dayBar `json:"daily"`
+		Daily   []dayBar   `json:"daily"`
 	}
 	var out []item
 	for _, svc := range services {
