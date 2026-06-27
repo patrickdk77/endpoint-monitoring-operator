@@ -236,10 +236,9 @@
         const now = new Date()
         let from, to
         if(range==='1d'){
-          // previous day
-          const yesterday = new Date(now.getTime() - 24*3600*1000)
-          from = new Date(yesterday.getFullYear(), yesterday.getMonth(), yesterday.getDate(), 0,0,0)
-          to = new Date(from.getTime() + 24*3600*1000 - 1000)
+          // previous 24 hours ending now
+          from = new Date(now.getTime() - 24*3600*1000)
+          to = now
         } else if(range==='7d'){
           from = new Date(now.getTime() - 7*24*3600*1000)
           to = now
