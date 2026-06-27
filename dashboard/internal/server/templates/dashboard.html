@@ -21,7 +21,7 @@
             <span class="status status-{{.Status}}">{{.Status}}</span>
           </div>
           <div class="timeline" title="Last {{len .Daily}} days">
-            {{range .Daily}}<div class="bar bar-{{.Status}}" title="{{.Label}}: {{.Status}}"></div>{{end}}
+            {{range .Daily}}<div class="bar {{barClass .Status .Date}}" title="{{.Label}}: {{.Status}}"></div>{{end}}
           </div>
           <div class="card-foot">
             <span class="meta">{{.Meta.Driver}} · {{.Meta.Endpoint}}</span>
