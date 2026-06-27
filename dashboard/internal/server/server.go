@@ -8,6 +8,7 @@ import (
 	"html"
 	"html/template"
 	"io/fs"
+	"math"
 	"net/http"
 	"sort"
 	"strings"
@@ -216,7 +217,11 @@ func (s *Server) sla(ctx context.Context, dash, svc string) string {
 	if total == 0 {
 		return ""
 	}
-	return fmt.Sprintf("%.2f%%", float64(success)/float64(total)*100)
+	pct := float64(success) / float64(total) * 100
+	if pct == math.Trunc(pct) {
+		return fmt.Sprintf("%.0f%%", pct)
+	}
+	return fmt.Sprintf("%.2f%%", pct)
 }
 
 type windowView struct {
