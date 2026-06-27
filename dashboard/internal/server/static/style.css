@@ -1,22 +1,51 @@
+/* Default to dark mode (also used when the browser preference is unknown). */
 :root {
-  --operational: #2da44e;
-  --degraded: #d4a72c;
-  --major_outage: #cf222e;
-  --unknown: #8c959f;
-  --bg: #f6f8fa;
-  --card: #ffffff;
-  --text: #1f2328;
-  --muted: #656d76;
-  --border: #d0d7de;
+  --operational: #3fb950;
+  --degraded: #d29922;
+  --major_outage: #f85149;
+  --unknown: #6e7681;
+  --bg: #0d1117;
+  --card: #161b22;
+  --text: #e6edf3;
+  --muted: #8b949e;
+  --border: #30363d;
+  --link: #58a6ff;
+}
+
+/* Switch to light only when the browser explicitly prefers it. */
+@media (prefers-color-scheme: light) {
+  :root {
+    --operational: #2da44e;
+    --degraded: #d4a72c;
+    --major_outage: #cf222e;
+    --unknown: #8c959f;
+    --bg: #f6f8fa;
+    --card: #ffffff;
+    --text: #1f2328;
+    --muted: #656d76;
+    --border: #d0d7de;
+    --link: #0969da;
+  }
 }
 * { box-sizing: border-box; }
 body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; margin: 0; background: var(--bg); color: var(--text); }
 header { background: var(--card); border-bottom: 1px solid var(--border); padding: 1.25rem 2rem; }
 header h1 { margin: 0; font-size: 1.5rem; }
 main { max-width: 1100px; margin: 0 auto; padding: 2rem; }
-a { color: #0969da; text-decoration: none; }
+a { color: var(--link); text-decoration: none; }
 a:hover { text-decoration: underline; }
+.service-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; align-items: start; }
 .card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 1.25rem; margin-bottom: 1rem; }
+.service-grid .card { margin-bottom: 0; }
+.card-head { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
+
+@media (max-width: 768px) {
+  .service-grid { grid-template-columns: 1fr; }
+  main { padding: 1rem; }
+  header { padding: 1rem 1.25rem; }
+  header h1 { font-size: 1.25rem; }
+  .card-head { flex-wrap: wrap; }
+}
 .status { display: inline-block; padding: 0.2rem 0.6rem; border-radius: 999px; font-size: 0.85rem; font-weight: 600; color: #fff; text-transform: capitalize; }
 .status-operational, .status-success { background: var(--operational); }
 .status-degraded { background: var(--degraded); }
