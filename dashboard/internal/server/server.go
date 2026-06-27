@@ -87,6 +87,19 @@ func New(s *store.Store, retentionDays int) (*Server, error) {
 		"assetURL": func(name string) string {
 			return assetURL(name, hashes)
 		},
+		"barClass": func(status, date string) string {
+			base := "bar-" + status
+			if status == "" || status == "unknown" {
+				return base
+			}
+			if parsed, err := time.Parse("2006-01-02", date); err == nil {
+				cutoff := time.Now().UTC().AddDate(0, 0, -30)
+				if parsed.UTC().Before(cutoff) {
+					return base + " bar-old"
+				}
+			}
+			return base
+		},
 	})
 	var err2 error
 	tmpl, err2 = tmpl.ParseFS(templateFS, "templates/*.html")

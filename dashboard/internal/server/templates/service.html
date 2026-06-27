@@ -31,7 +31,7 @@
         </div>
       </div>
       <div class="timeline">
-        {{range .Daily}}<a class="bar bar-{{.Status}}" href="/{{$.Dashboard}}/{{$.ServiceID}}?day={{.Date}}" title="{{.Label}}: {{.Status}} (view this day)"></a>{{end}}
+        {{range .Daily}}<a class="bar {{barClass .Status .Date}}" href="/{{$.Dashboard}}/{{$.ServiceID}}?day={{.Date}}" title="{{.Label}}: {{.Status}} (view this day)"></a>{{end}}
       </div>
     </div>
     <div class="card">
