@@ -25,7 +25,7 @@
           </div>
           <div class="card-foot">
             <span class="meta">{{.Meta.Driver}} · {{.Meta.Endpoint}}</span>
-            <span class="sla" title="Uptime over last {{len .Daily}} days">{{if .SLA}}{{.SLA}}{{else}}&mdash;{{end}}</span>
+            <span class="sla" title="Uptime over last {{len .Daily}} days">{{formatSLA .SLA}}</span>
           </div>
         </div>
         {{end}}
