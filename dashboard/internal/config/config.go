@@ -11,6 +11,7 @@ import (
 type Config struct {
 	HTTPAddr             string     `yaml:"httpAddr"`
 	RollupInterval       string     `yaml:"rollupInterval"`
+	BackfillPace         string     `yaml:"backfillPace"`
 	DefaultRetentionDays int        `yaml:"defaultRetentionDays"`
 	Locations            []Location `yaml:"locations"`
 }
@@ -48,6 +49,9 @@ func (c *Config) applyDefaults() {
 	if c.RollupInterval == "" {
 		c.RollupInterval = "5m"
 	}
+	if c.BackfillPace == "" {
+		c.BackfillPace = "10ms"
+	}
 	if c.DefaultRetentionDays == 0 {
 		c.DefaultRetentionDays = 90
 	}
@@ -81,6 +85,10 @@ func (c *Config) validate() error {
 
 func (c *Config) RollupDuration() (time.Duration, error) {
 	return time.ParseDuration(c.RollupInterval)
+}
+
+func (c *Config) BackfillPaceDuration() (time.Duration, error) {
+	return time.ParseDuration(c.BackfillPace)
 }
 
 func (c *Config) Primary() *Location {

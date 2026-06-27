@@ -35,10 +35,15 @@ func main() {
 		log.Fatalf("rollup interval: %v", err)
 	}
 
+	backfillPace, err := cfg.BackfillPaceDuration()
+	if err != nil {
+		log.Fatalf("backfill pace: %v", err)
+	}
+
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	runner := rollup.New(st, rollupInterval)
+	runner := rollup.New(st, rollupInterval, backfillPace, cfg.DefaultRetentionDays)
 	go runner.Start(ctx)
 
 	srv, err := server.New(st, cfg.DefaultRetentionDays)

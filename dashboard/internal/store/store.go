@@ -220,6 +220,48 @@ func splitDetail(detail string) []string {
 	return []string{detail}
 }
 
+// ComputeAggregate reads raw samples for the given hour from every location
+// (read-only) and computes the per-location rollups plus the cross-location
+// aggregate status. It performs no writes. The bool is false when no location
+// has any data for the hour.
+func (s *Store) ComputeAggregate(ctx context.Context, dash, svc string, hour time.Time) (AggregateRollup, bool) {
+	perLocation := make(map[string]LocationRollup)
+	var locStatuses []status.LocationStatus
+	var totalSuccess, totalFailure int
+	var totalMs float64
+	var msSamples int
+
+	for _, loc := range s.LocationNames() {
+		lr, err := s.ComputeLocationRollup(ctx, loc, dash, svc, hour)
+		if err != nil || lr.Total == 0 {
+			continue
+		}
+		perLocation[loc] = lr
+		locStatuses = append(locStatuses, status.LocationStatus(lr.Status))
+		totalSuccess += lr.Success
+		totalFailure += lr.Failure
+		if lr.AvgMs > 0 {
+			totalMs += lr.AvgMs
+			msSamples++
+		}
+	}
+
+	if len(locStatuses) == 0 {
+		return AggregateRollup{}, false
+	}
+
+	agg := AggregateRollup{
+		Status:      string(status.AggregateFromLocations(locStatuses)),
+		Success:     totalSuccess,
+		Failure:     totalFailure,
+		PerLocation: perLocation,
+	}
+	if msSamples > 0 {
+		agg.AvgMs = totalMs / float64(msSamples)
+	}
+	return agg, true
+}
+
 func (s *Store) WriteLocationRollup(ctx context.Context, dash, svc, loc string, hour time.Time, rollup LocationRollup) error {
 	if rollup.Total == 0 {
 		return nil
