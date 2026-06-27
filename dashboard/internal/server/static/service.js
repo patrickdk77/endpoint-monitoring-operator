@@ -24,7 +24,12 @@
         }
       }
       const total = succ+fail
-      out[w.label] = total===0 ? '' : ((succ/total*100).toFixed(2)+'%')
+      if(total===0){
+        out[w.label] = ''
+      } else {
+        const pct = succ/total*100
+        out[w.label] = (Number.isInteger(pct) ? pct.toString() : pct.toFixed(2)) + '%'
+      }
     })
     return out
   }
@@ -50,28 +55,73 @@
     return out
   }
 
+  function formatTimeLabel(ts, span){
+    const d = new Date(ts)
+    if(span > 2*24*3600*1000) {
+      return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+    }
+    return d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+  }
+
+  function resizeCanvas(canvas){
+    const rect = canvas.getBoundingClientRect()
+    const dpr = window.devicePixelRatio || 1
+    canvas.width = Math.floor(rect.width * dpr)
+    canvas.height = Math.floor(rect.height * dpr)
+    const ctx = canvas.getContext('2d')
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    return { w: rect.width, h: rect.height }
+  }
+
   function drawChart(canvas, points){
     const ctx = canvas.getContext('2d')
-    const w = canvas.width, h = canvas.height
+    const { w, h } = resizeCanvas(canvas)
     ctx.clearRect(0,0,w,h)
     if(points.length===0) return
-    // compute ranges, ignore nulls
     const valid = points.filter(p=>p.value!=null)
     if(valid.length===0) return
     const xs = points.map(p=>p.t)
     const minX = xs[0], maxX = xs[xs.length-1]
     const vals = valid.map(p=>p.value)
-    const minY = Math.min(...vals), maxY = Math.max(...vals)
-    const pad = 10
-    // axes
-    ctx.strokeStyle = '#ccc'; ctx.lineWidth=1
-    ctx.beginPath(); ctx.moveTo(pad,h-pad); ctx.lineTo(w-pad,h-pad); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(pad,pad); ctx.lineTo(pad,h-pad); ctx.stroke();
-    // draw polyline
-    ctx.strokeStyle = '#0b76ef'; ctx.lineWidth=2; ctx.beginPath()
+    let minY = Math.min(0, Math.min(...vals)), maxY = Math.max(...vals)
+    if(minY === maxY) {
+      maxY = minY + 1
+    }
+    const padding = { left: 50, right: 16, top: 18, bottom: 28 }
+    const plotW = w - padding.left - padding.right
+    const plotH = h - padding.top - padding.bottom
+    const muted = getComputedStyle(document.body).getPropertyValue('--muted') || '#8b949e'
+    const border = getComputedStyle(document.body).getPropertyValue('--border') || '#30363d'
+
+    ctx.font = '12px Inter, ui-sans-serif, system-ui, sans-serif'
+    ctx.fillStyle = muted
+    ctx.strokeStyle = border
+    ctx.lineWidth = 1
+
+    const ticks = 5
+    for(let i = 0; i < ticks; i++){
+      const y = padding.top + plotH - (plotH/(ticks-1))*i
+      const value = minY + (maxY-minY)/(ticks-1)*i
+      ctx.beginPath(); ctx.moveTo(padding.left, y); ctx.lineTo(w-padding.right, y); ctx.stroke()
+      const label = Math.round(value) === value ? value.toString() : value.toFixed(1)
+      ctx.fillText(label + ' ms', 4, y + 4)
+    }
+
+    const span = maxX - minX
+    const xLabels = [0, 0.5, 1].map(r => ({
+      t: minX + r * span,
+      x: padding.left + r * plotW
+    }))
+    xLabels.forEach(lbl => {
+      ctx.fillText(formatTimeLabel(lbl.t, span), lbl.x - 16, h - 6)
+    })
+
+    ctx.strokeStyle = '#0b76ef'
+    ctx.lineWidth = 2
+    ctx.beginPath()
     points.forEach((p,i)=>{
-      const x = pad + ((p.t - minX)/(maxX-minX || 1))*(w-2*pad)
-      const y = h-pad - ((p.value - minY)/(maxY-minY || 1))*(h-2*pad)
+      const x = padding.left + ((p.t - minX)/(maxX-minX || 1))*plotW
+      const y = padding.top + plotH - ((p.value - minY)/(maxY-minY || 1))*plotH
       if(p.value==null){ ctx.moveTo(x,y); return }
       if(i===0 || points[i-1].value==null) ctx.moveTo(x,y); else ctx.lineTo(x,y)
     })
@@ -137,13 +187,20 @@
     const statsEl = $('rt-stats')
     const rangeBtns = document.querySelectorAll('#range-buttons button')
 
+    function renderSLA(value){
+      if(!value) return '—'
+      const m = value.match(/^(\d+(?:\.\d+)?)%$/)
+      if(m) return '<span class="sla-num">'+m[1]+'</span><span class="sla-percent">%</span>'
+      return value
+    }
+
     fetchData(dash, svc).then(data=>{
       const rollups = data.rollups || {}
       // populate SLAs
       const slas = computeSLAs(rollups)
-      sla7El.textContent = slas['7d'] || '-'
-      sla30El.textContent = slas['30d'] || '-'
-      sla365El.textContent = slas['365d'] || '-'
+      sla7El.innerHTML = renderSLA(slas['7d'])
+      sla30El.innerHTML = renderSLA(slas['30d'])
+      sla365El.innerHTML = renderSLA(slas['365d'])
 
       // populate locations
       const locs = buildLocations(rollups)
