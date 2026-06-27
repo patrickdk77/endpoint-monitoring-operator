@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"net/http"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/patrickdk77/endpoint-monitoring-operator/dashboard/internal/status"
@@ -35,15 +36,28 @@ func New(s *store.Store, retentionDays int) (*Server, error) {
 }
 
 func (s *Server) Handler() http.Handler {
-	mux := http.NewServeMux()
 	static, _ := fs.Sub(staticFS, "static")
-	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.FS(static))))
-	mux.HandleFunc("GET /api/dashboards", s.handleAPIDashboards)
-	mux.HandleFunc("GET /api/dashboard/{dash}/overview", s.handleAPIOverview)
-	mux.HandleFunc("GET /api/dashboard/{dash}/{name}", s.handleAPIService)
-	mux.HandleFunc("GET /{dash}", s.handleDashboard)
-	mux.HandleFunc("GET /{dash}/{name}", s.handleService)
-	return mux
+	staticHandler := http.StripPrefix("/static/", http.FileServer(http.FS(static)))
+
+	apiMux := http.NewServeMux()
+	apiMux.HandleFunc("GET /dashboards", s.handleAPIDashboards)
+	apiMux.HandleFunc("GET /dashboard/{dash}/overview", s.handleAPIOverview)
+	apiMux.HandleFunc("GET /dashboard/{dash}/{name}", s.handleAPIService)
+
+	pageMux := http.NewServeMux()
+	pageMux.HandleFunc("GET /{dash}", s.handleDashboard)
+	pageMux.HandleFunc("GET /{dash}/{name}", s.handleService)
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasPrefix(r.URL.Path, "/static/"):
+			staticHandler.ServeHTTP(w, r)
+		case strings.HasPrefix(r.URL.Path, "/api/"):
+			http.StripPrefix("/api", apiMux).ServeHTTP(w, r)
+		default:
+			pageMux.ServeHTTP(w, r)
+		}
+	})
 }
 
 type serviceOverview struct {
