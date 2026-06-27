@@ -4,6 +4,7 @@ import (
 	"context"
 	"embed"
 	"encoding/json"
+	"fmt"
 	"html/template"
 	"io/fs"
 	"net/http"
@@ -65,6 +66,7 @@ type serviceOverview struct {
 	Display string
 	Meta    store.Meta
 	Status  string
+	SLA     string
 	Daily   []dayBar
 }
 
@@ -114,15 +116,17 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		if len(daily) > 0 {
 			current = status.AggregateStatus(daily[len(daily)-1].Status)
 		}
-		group, display := splitGroup(svc)
+		name := svc
 		if meta.Name != "" {
-			display = meta.Name
+			name = meta.Name
 		}
+		group, display := splitGroup(name)
 		ov := serviceOverview{
 			ID:      svc,
 			Display: display,
 			Meta:    meta,
 			Status:  string(current),
+			SLA:     s.sla(r.Context(), dash, svc),
 			Daily:   daily,
 		}
 		idx, ok := groupIndex[group]
@@ -176,20 +180,52 @@ func (s *Server) dailyBars(ctx context.Context, dash, svc string) []dayBar {
 	return bars
 }
 
-type hourBar struct {
-	Hour   string
-	Status string
-	Detail store.AggregateRollup
+// sla computes the uptime percentage over the retention window as the ratio of
+// successful to total checks across all locations. Hours with no data simply
+// contribute nothing. Returns an empty string when there is no data at all.
+func (s *Server) sla(ctx context.Context, dash, svc string) string {
+	now := time.Now().UTC()
+	from := now.AddDate(0, 0, -(s.retention - 1)).Truncate(24 * time.Hour)
+	rollups, _ := s.store.GetAggregateRollups(ctx, dash, svc, from, now)
+
+	curHour := now.Truncate(time.Hour)
+	if agg, ok := s.store.ComputeAggregate(ctx, dash, svc, curHour); ok {
+		rollups[curHour.Unix()] = agg
+	}
+
+	var success, failure int
+	for _, r := range rollups {
+		success += r.Success
+		failure += r.Failure
+	}
+	total := success + failure
+	if total == 0 {
+		return ""
+	}
+	return fmt.Sprintf("%.2f%%", float64(success)/float64(total)*100)
+}
+
+type windowView struct {
+	Locations string
+	Message   string
+	Start     string
+	End       string
+	Duration  string
+	Count     int
+	Ongoing   bool
 }
 
 type serviceData struct {
-	Dashboard string
-	ServiceID string
-	Display   string
-	Group     string
-	Meta      store.Meta
-	Hours     []hourBar
-	Daily     []dayBar
+	Dashboard    string
+	ServiceID    string
+	Display      string
+	Group        string
+	Meta         store.Meta
+	SLA          string
+	SelectedDay  string
+	WindowsTitle string
+	Windows      []windowView
+	Daily        []dayBar
 }
 
 func (s *Server) handleService(w http.ResponseWriter, r *http.Request) {
@@ -197,44 +233,85 @@ func (s *Server) handleService(w http.ResponseWriter, r *http.Request) {
 	svc := r.PathValue("name")
 
 	meta, _ := s.store.GetMeta(r.Context(), dash, svc)
-	group, display := splitGroup(svc)
+	name := svc
 	if meta.Name != "" {
-		display = meta.Name
+		name = meta.Name
 	}
+	group, display := splitGroup(name)
 	now := time.Now().UTC()
+
+	// Default view: the rolling last 24 hours ending now. When a ?day=YYYY-MM-DD
+	// is supplied, show that calendar day's 24 hours instead.
 	from := now.Add(-24 * time.Hour).Truncate(time.Hour)
-	rollups, _ := s.store.GetAggregateRollups(r.Context(), dash, svc, from, now)
-
-	// Overlay the current hour computed live so the latest hour reflects state
-	// changes immediately rather than waiting for the next rollup pass.
-	curHour := now.Truncate(time.Hour)
-	if agg, ok := s.store.ComputeAggregate(r.Context(), dash, svc, curHour); ok {
-		rollups[curHour.Unix()] = agg
+	to := now
+	windowsTitle := "Failures (last 24 hours)"
+	selectedDay := ""
+	if d, err := time.Parse("2006-01-02", r.URL.Query().Get("day")); err == nil {
+		from = d.UTC()
+		to = from.Add(24*time.Hour - time.Second)
+		windowsTitle = "Failures on " + from.Format("2006-01-02")
+		selectedDay = from.Format("2006-01-02")
 	}
 
-	var hours []hourBar
-	for h := from; !h.After(now); h = h.Add(time.Hour) {
-		rollup, ok := rollups[h.Unix()]
-		st := string(status.AggregateUnknown)
-		if ok {
-			st = rollup.Status
-		}
-		hours = append(hours, hourBar{
-			Hour:   h.Format("15:04"),
-			Status: st,
-			Detail: rollup,
-		})
-	}
+	// A window left open at the end of the stream is only "ongoing" when the
+	// view actually reaches the present.
+	live := !to.Before(now.Truncate(time.Hour))
+	windows := s.failureWindows(r.Context(), dash, svc, from, to, live)
 
 	s.render(w, "service.html", serviceData{
-		Dashboard: dash,
-		ServiceID: svc,
-		Display:   display,
-		Group:     group,
-		Meta:      meta,
-		Hours:     hours,
-		Daily:     s.dailyBars(r.Context(), dash, svc),
+		Dashboard:    dash,
+		ServiceID:    svc,
+		Display:      display,
+		Group:        group,
+		SLA:          s.sla(r.Context(), dash, svc),
+		SelectedDay:  selectedDay,
+		WindowsTitle: windowsTitle,
+		Meta:         meta,
+		Windows:      windows,
+		Daily:        s.dailyBars(r.Context(), dash, svc),
 	})
+}
+
+func (s *Server) failureWindows(ctx context.Context, dash, svc string, from, to time.Time, live bool) []windowView {
+	raw := s.store.FailureWindows(ctx, dash, svc, from, to, live)
+	out := make([]windowView, 0, len(raw))
+	for _, w := range raw {
+		msg := w.Message
+		if msg == "" {
+			msg = "(no message)"
+		}
+		start := time.Unix(w.Start, 0).UTC()
+		end := time.Unix(w.End, 0).UTC()
+		v := windowView{
+			Locations: strings.Join(w.Locations, ", "),
+			Message:   msg,
+			Start:     start.Format("2006-01-02 15:04:05 UTC"),
+			Count:     w.Count,
+			Ongoing:   w.Ongoing,
+		}
+		if w.Ongoing {
+			v.End = "ongoing"
+			v.Duration = humanDuration(time.Now().UTC().Sub(start))
+		} else {
+			v.End = end.Format("2006-01-02 15:04:05 UTC")
+			v.Duration = humanDuration(end.Sub(start))
+		}
+		out = append(out, v)
+	}
+	return out
+}
+
+func humanDuration(d time.Duration) string {
+	if d < time.Minute {
+		return fmt.Sprintf("%ds", int(d.Seconds()))
+	}
+	d = d.Round(time.Minute)
+	h := int(d / time.Hour)
+	m := int((d % time.Hour) / time.Minute)
+	if h == 0 {
+		return fmt.Sprintf("%dm", m)
+	}
+	return fmt.Sprintf("%dh%dm", h, m)
 }
 
 func (s *Server) handleAPIDashboards(w http.ResponseWriter, r *http.Request) {

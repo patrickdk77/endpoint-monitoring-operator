@@ -130,6 +130,14 @@ func (r *Runner) runOnce(ctx context.Context) {
 			for _, hour := range hours {
 				r.rollupServiceHour(ctx, dash, svc, hour)
 			}
+
+			// Ensure the previous day's daily rollup exists, then update SLA summaries.
+			if err := r.store.EnsureYesterdayDaily(ctx, dash, svc); err != nil {
+				log.Printf("rollup: update daily %s/%s: %v", dash, svc, err)
+			}
+			if err := r.store.UpdateSLAs(ctx, dash, svc); err != nil {
+				log.Printf("rollup: update slas %s/%s: %v", dash, svc, err)
+			}
 		}
 	}
 }
