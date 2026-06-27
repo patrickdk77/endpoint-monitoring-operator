@@ -3,11 +3,12 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{{.ServiceID}} · {{.Dashboard}}</title>
+  <meta http-equiv="refresh" content="300">
+  <title>{{.Display}} · {{.Dashboard}}</title>
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-  <header><h1>{{if .Meta.Name}}{{.Meta.Name}}{{else}}{{.ServiceID}}{{end}}</h1></header>
+  <header><h1>{{if .Group}}<span class="group-label">{{.Group}}</span> {{end}}{{.Display}}</h1></header>
   <main>
     <p><a href="/{{.Dashboard}}">Back to {{.Dashboard}}</a></p>
     <div class="card">

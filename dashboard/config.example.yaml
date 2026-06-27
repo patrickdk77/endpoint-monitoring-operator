@@ -1,5 +1,9 @@
 httpAddr: ":8080"
 rollupInterval: 5m
+# Delay between each gap hour processed by the startup backfill. The backfill
+# scans the full retention window once on startup and fills any missing hourly
+# rollups, pacing itself with this delay so it does not hammer the locations.
+backfillPace: 10ms
 defaultRetentionDays: 90
 locations:
   # Primary: local Valkey for this dashboard instance. Rollups are written here only.

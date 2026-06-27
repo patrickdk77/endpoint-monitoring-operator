@@ -5,20 +5,25 @@ import (
 	"log"
 	"time"
 
-	"github.com/patrickdk77/endpoint-monitoring-operator/dashboard/internal/status"
 	"github.com/patrickdk77/endpoint-monitoring-operator/dashboard/internal/store"
 )
 
 type Runner struct {
 	store    *store.Store
 	interval time.Duration
+	pace     time.Duration
+	hours    int
 }
 
-func New(s *store.Store, interval time.Duration) *Runner {
-	return &Runner{store: s, interval: interval}
+func New(s *store.Store, interval, pace time.Duration, retentionDays int) *Runner {
+	return &Runner{store: s, interval: interval, pace: pace, hours: retentionDays * 24}
 }
 
 func (r *Runner) Start(ctx context.Context) {
+	// Fill any historical gaps in the background so the live periodic rollup
+	// below is never blocked waiting on a long backfill.
+	go r.backfill(ctx)
+
 	ticker := time.NewTicker(r.interval)
 	defer ticker.Stop()
 
@@ -31,6 +36,75 @@ func (r *Runner) Start(ctx context.Context) {
 			r.runOnce(ctx)
 		}
 	}
+}
+
+// svcRef identifies a single monitor (service) within a dashboard, along with
+// the set of hours that already have an aggregate rollup in the primary store.
+type svcRef struct {
+	dash     string
+	svc      string
+	existing map[int64]struct{}
+}
+
+// backfill scans the full retention window and computes any hour that is
+// missing an aggregate rollup in the primary store. It steps hour-by-hour
+// across every monitor (the most recent completed hour first, then one hour
+// further back, and so on) so recent history fills in across all monitors
+// before older history. It paces itself by sleeping between each gap hour it
+// processes so it does not hammer the source locations on startup.
+func (r *Runner) backfill(ctx context.Context) {
+	dashboards, err := r.store.ListDashboards(ctx)
+	if err != nil {
+		log.Printf("rollup: backfill list dashboards: %v", err)
+		return
+	}
+
+	now := time.Now().UTC().Truncate(time.Hour)
+
+	var refs []svcRef
+	oldest := now.Add(-time.Duration(r.hours-1) * time.Hour)
+	for _, dash := range dashboards {
+		services, err := r.store.ListServices(ctx, dash)
+		if err != nil {
+			log.Printf("rollup: backfill list services for %s: %v", dash, err)
+			continue
+		}
+		for _, svc := range services {
+			rollups, err := r.store.GetAggregateRollups(ctx, dash, svc, oldest, now)
+			if err != nil {
+				log.Printf("rollup: backfill read rollups %s/%s: %v", dash, svc, err)
+				continue
+			}
+			existing := make(map[int64]struct{}, len(rollups))
+			for epoch := range rollups {
+				existing[epoch] = struct{}{}
+			}
+			refs = append(refs, svcRef{dash: dash, svc: svc, existing: existing})
+		}
+	}
+
+	filled := 0
+	// Offset 0 is the most recent completed hour (now-1h); step back from there.
+	for offset := 1; offset <= r.hours; offset++ {
+		hour := now.Add(-time.Duration(offset) * time.Hour)
+		for _, ref := range refs {
+			if ctx.Err() != nil {
+				return
+			}
+			if _, ok := ref.existing[hour.Unix()]; ok {
+				continue
+			}
+			if r.rollupServiceHour(ctx, ref.dash, ref.svc, hour) {
+				filled++
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(r.pace):
+			}
+		}
+	}
+	log.Printf("rollup: backfill complete, filled %d gap hour(s)", filled)
 }
 
 func (r *Runner) runOnce(ctx context.Context) {
@@ -60,50 +134,23 @@ func (r *Runner) runOnce(ctx context.Context) {
 	}
 }
 
-func (r *Runner) rollupServiceHour(ctx context.Context, dash, svc string, hour time.Time) {
-	perLocation := make(map[string]store.LocationRollup)
-	var locStatuses []status.LocationStatus
-	var totalSuccess, totalFailure int
-	var totalMs float64
-	var msSamples int
+// rollupServiceHour computes and persists the rollups for a single service-hour.
+// It returns true when an aggregate rollup was written (i.e. data existed).
+func (r *Runner) rollupServiceHour(ctx context.Context, dash, svc string, hour time.Time) bool {
+	aggregate, ok := r.store.ComputeAggregate(ctx, dash, svc, hour)
+	if !ok {
+		return false
+	}
 
-	for _, loc := range r.store.LocationNames() {
-		rollup, err := r.store.ComputeLocationRollup(ctx, loc, dash, svc, hour)
-		if err != nil {
-			log.Printf("rollup: %s %s %s %s: %v", loc, dash, svc, hour.Format(time.RFC3339), err)
-			continue
-		}
-		if rollup.Total == 0 {
-			continue
-		}
-		if err := r.store.WriteLocationRollup(ctx, dash, svc, loc, hour, rollup); err != nil {
-			log.Printf("rollup: write location rollup: %v", err)
-		}
-		perLocation[loc] = rollup
-		locStatuses = append(locStatuses, status.LocationStatus(rollup.Status))
-		totalSuccess += rollup.Success
-		totalFailure += rollup.Failure
-		if rollup.AvgMs > 0 {
-			totalMs += rollup.AvgMs
-			msSamples++
+	for loc, lr := range aggregate.PerLocation {
+		if err := r.store.WriteLocationRollup(ctx, dash, svc, loc, hour, lr); err != nil {
+			log.Printf("rollup: write location rollup %s %s %s: %v", loc, dash, svc, err)
 		}
 	}
 
-	aggStatus := status.AggregateFromLocations(locStatuses)
-	aggregate := store.AggregateRollup{
-		Status:      string(aggStatus),
-		Success:     totalSuccess,
-		Failure:     totalFailure,
-		PerLocation: perLocation,
-	}
-	if msSamples > 0 {
-		aggregate.AvgMs = totalMs / float64(msSamples)
-	}
-
-	if len(locStatuses) == 0 {
-		return
-	}
 	if err := r.store.WriteAggregateRollup(ctx, dash, svc, hour, aggregate); err != nil {
-		log.Printf("rollup: write aggregate rollup: %v", err)
+		log.Printf("rollup: write aggregate rollup %s %s: %v", dash, svc, err)
+		return false
 	}
+	return true
 }
