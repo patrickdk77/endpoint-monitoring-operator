@@ -15,12 +15,19 @@
       <div class="meta">{{.Meta.Driver}} · {{.Meta.Endpoint}}</div>
       <div class="section-head">
         <h3>Last 90 days</h3>
-        <div class="sla-block" title="Uptime summaries">
-          <div class="sla-item"><span class="sla-label">7d</span>
-            <span class="sla" id="sla7">&mdash;</span>
+        <div class="sla-grid" title="Uptime summaries">
+          <div class="sla-card">
+            <span class="sla-label">7 Days</span>
+            <span class="sla" id="sla7">—</span>
           </div>
-          <div class="sla-item"><span class="sla-label">30d</span><span class="sla" id="sla30">&mdash;</span></div>
-          <div class="sla-item"><span class="sla-label">365d</span><span class="sla" id="sla365">&mdash;</span></div>
+          <div class="sla-card">
+            <span class="sla-label">30 Days</span>
+            <span class="sla" id="sla30">—</span>
+          </div>
+          <div class="sla-card">
+            <span class="sla-label">365 Days</span>
+            <span class="sla" id="sla365">—</span>
+          </div>
         </div>
       </div>
       <div class="timeline">
@@ -32,14 +39,14 @@
         <h3>Response time</h3>
       </div>
       <div id="controls">
-        <label>Location: <select id="location-select"><option value="all">All locations</option></select></label>
-        <div id="range-buttons">
-          <button data-range="1d">Prev day</button>
-          <button data-range="7d">Week</button>
-          <button data-range="30d">Month</button>
-          <button data-range="60d">2 months</button>
-          <button data-range="90d">3 months</button>
-        </div>
+        <label>Location: <select id="location-select"><option value="all">All</option></select></label>
+        <label>Time Frame: <select id="time-frame-select">
+          <option value="1d">Prev day</option>
+          <option value="7d">Week</option>
+          <option value="30d">Month</option>
+          <option value="60d">2 months</option>
+          <option value="90d">3 months</option>
+        </select></label>
       </div>
       <canvas id="rt-chart" width="800" height="200"></canvas>
       <div id="rt-stats" class="meta"></div>
@@ -67,7 +74,7 @@
         {{end}}
       </ul>
       {{else}}
-      <p class="meta">No failures recorded in this window.</p>
+      <p class="meta">No issues recorded in this window.</p>
       {{end}}
     </div>
   </main>

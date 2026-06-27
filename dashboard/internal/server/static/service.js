@@ -19,8 +19,8 @@
       for(const h of hrs){
         const t = new Date(h.t)
         if(t>=from && t<=now){
-          succ += h.r.Success || 0
-          fail += h.r.Failure || 0
+          succ += h.r.success || 0
+          fail += h.r.failure || 0
         }
       }
       const total = succ+fail
@@ -33,8 +33,8 @@
     const set = new Set()
     for(const k in rollups){
       const r = rollups[k]
-      if(r && r.PerLocation){
-        Object.keys(r.PerLocation).forEach(l=>set.add(l))
+      if(r && r.perLocation){
+        Object.keys(r.perLocation).forEach(l=>set.add(l))
       }
     }
     return Array.from(set).sort()
@@ -82,15 +82,15 @@
     // returns map location -> {avg,min,max}
     const locs = {}
     for(const h of hours){
-      const per = h.r.PerLocation || {}
+      const per = h.r.perLocation || {}
       for(const loc in per){
         const lr = per[loc]
-        if(!lr || !lr.Success) continue
-        const val = lr.AvgMs || null
+        if(!lr || !lr.success) continue
+        const val = lr.avgMs || null
         if(val==null) continue
         if(!locs[loc]) locs[loc] = {sum:0, count:0, min: val, max: val}
-        locs[loc].sum += val * (lr.Success || 1)
-        locs[loc].count += (lr.Success || 1)
+        locs[loc].sum += val * (lr.success || 1)
+        locs[loc].count += (lr.success || 1)
         if(val < locs[loc].min) locs[loc].min = val
         if(val > locs[loc].max) locs[loc].max = val
       }
@@ -111,16 +111,16 @@
       let value = null
       if(location==='all'){
         let sum=0, cnt=0
-        for(const loc in h.r.PerLocation||{}){
-          const lr = h.r.PerLocation[loc]
-          if(!lr || !lr.Success || !lr.AvgMs) continue
-          sum += lr.AvgMs * (lr.Success||1)
-          cnt += (lr.Success||1)
+        for(const loc in h.r.perLocation||{}){
+          const lr = h.r.perLocation[loc]
+          if(!lr || !lr.success || !lr.avgMs) continue
+          sum += lr.avgMs * (lr.success||1)
+          cnt += (lr.success||1)
         }
         if(cnt>0) value = sum/cnt
       } else {
-        const lr = (h.r.PerLocation||{})[location]
-        if(lr && lr.Success && lr.AvgMs) value = lr.AvgMs
+        const lr = (h.r.perLocation||{})[location]
+        if(lr && lr.success && lr.avgMs) value = lr.avgMs
       }
       pts.push({t: h.t, value})
     }
@@ -198,16 +198,9 @@
       chooseRange('1d')
 
       // wire controls
-      locSel.addEventListener('change', ()=> chooseRange(document.querySelector('#range-buttons button.active')?.dataset.range || '1d'))
-      rangeBtns.forEach(b=>{
-        b.addEventListener('click', ()=>{
-          rangeBtns.forEach(x=>x.classList.remove('active'))
-          b.classList.add('active')
-          chooseRange(b.dataset.range)
-        })
-      })
-      // default active button
-      document.querySelector('#range-buttons button[data-range="1d"]').classList.add('active')
+      const timeFrameSel = $('time-frame-select')
+      locSel.addEventListener('change', ()=> chooseRange(timeFrameSel.value || '1d'))
+      timeFrameSel.addEventListener('change', ()=> chooseRange(timeFrameSel.value || '1d'))
     }).catch(err=>{
       console.error('fetch rollups failed', err)
     })
