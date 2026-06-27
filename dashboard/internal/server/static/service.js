@@ -6,6 +6,22 @@
 
   function formatPct(s){ return s === '' ? '-' : s }
 
+  function slaClass(value){
+    const m = value && value.match(/^(\d+(?:\.\d+)?)%$/)
+    if(!m) return ''
+    const n = parseFloat(m[1])
+    if(n >= 99.9) return 'sla-good'
+    if(n >= 99.5) return 'sla-warning'
+    return 'sla-danger'
+  }
+
+  function setSLA(el, value){
+    el.innerHTML = renderSLA(value)
+    el.classList.remove('sla-good', 'sla-warning', 'sla-danger')
+    const cls = slaClass(value)
+    if(cls) el.classList.add(cls)
+  }
+
   function computeSLAs(rollups){
     const now = new Date()
     const msPerDay = 24*3600*1000
@@ -198,9 +214,9 @@
       const rollups = data.rollups || {}
       // populate SLAs
       const slas = computeSLAs(rollups)
-      sla7El.innerHTML = renderSLA(slas['7d'])
-      sla30El.innerHTML = renderSLA(slas['30d'])
-      sla365El.innerHTML = renderSLA(slas['365d'])
+      setSLA(sla7El, slas['7d'])
+      setSLA(sla30El, slas['30d'])
+      setSLA(sla365El, slas['365d'])
 
       // populate locations
       const locs = buildLocations(rollups)

@@ -11,6 +11,7 @@ import (
 	"math"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -38,7 +39,18 @@ func New(s *store.Store, retentionDays int) (*Server, error) {
 			}
 			if strings.HasSuffix(s, "%") {
 				num := strings.TrimSuffix(s, "%")
-				return template.HTML(fmt.Sprintf(`<span class="sla-num">%s</span><span class="sla-percent">%%</span>`, html.EscapeString(num)))
+				class := "sla-good"
+				if n, err := strconv.ParseFloat(num, 64); err == nil {
+					switch {
+					case n >= 99.9:
+						class = "sla-good"
+					case n >= 99.5:
+						class = "sla-warning"
+					default:
+						class = "sla-danger"
+					}
+				}
+				return template.HTML(fmt.Sprintf(`<span class="%s"><span class="sla-num">%s</span><span class="sla-percent">%%</span></span>`, class, html.EscapeString(num)))
 			}
 			return template.HTML(html.EscapeString(s))
 		},
@@ -200,7 +212,7 @@ func (s *Server) dailyBars(ctx context.Context, dash, svc string) []dayBar {
 // contribute nothing. Returns an empty string when there is no data at all.
 func (s *Server) sla(ctx context.Context, dash, svc string) string {
 	now := time.Now().UTC()
-	from := now.AddDate(0, 0, -(s.retention - 1)).Truncate(24 * time.Hour)
+	from := now.Add(-29 * 24 * time.Hour)
 	rollups, _ := s.store.GetAggregateRollups(ctx, dash, svc, from, now)
 
 	curHour := now.Truncate(time.Hour)
