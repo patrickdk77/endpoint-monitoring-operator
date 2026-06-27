@@ -2,22 +2,27 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{.Name}} Status</title>
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
   <header><h1>{{.Name}} Status</h1></header>
   <main>
-    {{range .Services}}
-    <div class="card">
-      <div>
-        <strong><a href="/{{$.Name}}/{{.ID}}">{{if .Meta.Name}}{{.Meta.Name}}{{else}}{{.ID}}{{end}}</a></strong>
-        <span class="status status-{{.Status}}">{{.Status}}</span>
+    {{if .Services}}
+    <div class="service-grid">
+      {{range .Services}}
+      <div class="card">
+        <div class="card-head">
+          <strong><a href="/{{$.Name}}/{{.ID}}">{{if .Meta.Name}}{{.Meta.Name}}{{else}}{{.ID}}{{end}}</a></strong>
+          <span class="status status-{{.Status}}">{{.Status}}</span>
+        </div>
+        <div class="timeline" title="Last {{len .Daily}} days">
+          {{range .Daily}}<div class="bar bar-{{.Status}}" title="{{.Label}}: {{.Status}}"></div>{{end}}
+        </div>
+        <div class="meta">{{.Meta.Driver}} · {{.Meta.Endpoint}}</div>
       </div>
-      <div class="meta">{{.Meta.Driver}} · {{.Meta.Endpoint}}</div>
-      <div class="timeline" title="Last {{len .Daily}} days">
-        {{range .Daily}}<div class="bar bar-{{.Status}}" title="{{.Label}}: {{.Status}}"></div>{{end}}
-      </div>
+      {{end}}
     </div>
     {{else}}
     <div class="card"><p class="meta">No services found for this dashboard.</p></div>
