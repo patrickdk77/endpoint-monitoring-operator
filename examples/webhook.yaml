@@ -1,7 +1,7 @@
 apiVersion: monitoring.licious.app/v1alpha1
 kind: EndpointMonitor
 metadata:
-  name: trino-basic-http-check
+  name: slack-example-basic-http-check
   namespace: endpoint-monitoring-operator-system
 spec:
   checkInterval: 60  # check every 1 minute
@@ -33,6 +33,40 @@ spec:
               }
             }
           ]
+        }
+      alertOn:
+      - change
+---
+apiVersion: monitoring.licious.app/v1alpha1
+kind: EndpointMonitor
+metadata:
+  name: gotify-example-basic-http-check
+  namespace: endpoint-monitoring-operator-system
+spec:
+  checkInterval: 60  # check every 1 minute
+  driver: http
+  endpoint: https://status.example.com/
+  notify:
+    webhook:
+      enabled: true
+      webhookUrl: https://gotify.example.com/message
+      contentType: "application/json"
+      # Gotify authenticates with an application token. Reference a secret that
+      # contains a "Bearer" key holding the token; the operator will send it as
+      # "Authorization: Bearer <token>". Create it with, for example:
+      #   kubectl -n endpoint-monitoring-operator-system create secret generic gotify-token \
+      #     --from-literal=Bearer=YOUR_GOTIFY_APP_TOKEN
+      authorization:
+        name: gotify-token
+      contents: |-
+        {{- $priority := 5 -}}
+        {{- if eq .Status "failure" -}}{{- $priority = 8 -}}{{- else if eq .Status "success" -}}{{- $priority = 3 -}}{{- end -}}
+        {{- $icon := "ℹ️" -}}
+        {{- if eq .Status "success" -}}{{- $icon = "✅" -}}{{- else if eq .Status "failure" -}}{{- $icon = "❌" -}}{{- end -}}
+        {
+          "title": {{printf "%q" (printf "%s %s %s changed status to %s" $icon .Driver .Endpoint .Status)}},
+          "message": {{printf "%q" (printf "%s" .Message)}},
+          "priority": {{$priority}}
         }
       alertOn:
       - change
