@@ -13,7 +13,6 @@ import (
 	"html/template"
 	"io"
 	"io/fs"
-	"math"
 	"mime"
 	"net/http"
 	"path"
@@ -516,10 +515,9 @@ func (s *Server) sla(ctx context.Context, dash, svc string) string {
 		return ""
 	}
 	pct := float64(success) / float64(total) * 100
-	if pct == math.Trunc(pct) {
-		return fmt.Sprintf("%.0f%%", pct)
-	}
-	return fmt.Sprintf("%.2f%%", pct)
+	num := strings.TrimRight(fmt.Sprintf("%.2f", pct), "0")
+	num = strings.TrimRight(num, ".")
+	return num + "%"
 }
 
 type windowView struct {
@@ -611,7 +609,9 @@ func (s *Server) failureWindows(ctx context.Context, dash, svc string, from, to 
 			v.Duration = humanDuration(time.Now().UTC().Sub(start))
 		} else {
 			v.End = end.Format("2006-01-02 15:04:05 UTC")
-			v.Duration = humanDuration(end.Sub(start))
+			if d := end.Sub(start); d > 0 {
+				v.Duration = humanDuration(d)
+			}
 		}
 		out = append(out, v)
 	}

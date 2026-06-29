@@ -68,7 +68,7 @@
             <span class="incident-locs" title="Reporting locations">{{.Locations}}</span>
           </div>
           <div class="meta">
-            {{.Start}} &rarr; {{.End}} · {{.Duration}} · {{.Count}} failed check{{if ne .Count 1}}s{{end}}
+            {{.Start}} &rarr; {{.End}}{{if .Duration}} · {{.Duration}}{{end}} · {{.Count}} failed check{{if ne .Count 1}}s{{end}}
           </div>
         </li>
         {{end}}
