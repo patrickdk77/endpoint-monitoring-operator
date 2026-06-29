@@ -18,7 +18,7 @@
         <div class="card">
           <div class="card-head">
             <strong><a href="/{{$.Name}}/{{.ID}}">{{.Display}}</a></strong>
-            <span class="status status-{{.Status}}">{{.Status}}</span>
+            <span class="status status-{{.Status}}">{{formatStatus .Status}}</span>
           </div>
           <div class="timeline" title="Last {{len .Daily}} days">
             {{range .Daily}}<div class="bar {{barClass .Status .Date}}" title="{{.Label}}: {{.Status}}"></div>{{end}}

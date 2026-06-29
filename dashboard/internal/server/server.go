@@ -84,6 +84,9 @@ func New(s *store.Store, retentionDays int) (*Server, error) {
 			}
 			return template.HTML(html.EscapeString(s))
 		},
+		"formatStatus": func(s string) string {
+			return strings.ReplaceAll(s, "_", " ")
+		},
 		"assetURL": func(name string) string {
 			return assetURL(name, hashes)
 		},
@@ -404,10 +407,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	for _, svc := range services {
 		meta, _ := s.store.GetMeta(r.Context(), dash, svc)
 		daily := s.dailyBars(r.Context(), dash, svc)
-		current := status.AggregateOperational
-		if len(daily) > 0 {
-			current = status.AggregateStatus(daily[len(daily)-1].Status)
-		}
+		current := s.currentStatus(r.Context(), dash, svc)
 		name := svc
 		if meta.Name != "" {
 			name = meta.Name
@@ -431,6 +431,27 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.render(w, "dashboard.html", dashboardData{Name: dash, Groups: groups})
+}
+
+// currentStatus returns the most recent actual status for a service: the live
+// current-hour aggregate if checks have run this hour, otherwise the most
+// recently completed hour in the past 6 hours.
+func (s *Server) currentStatus(ctx context.Context, dash, svc string) status.AggregateStatus {
+	now := time.Now().UTC()
+	if agg, ok := s.store.ComputeAggregate(ctx, dash, svc, now.Truncate(time.Hour)); ok {
+		return status.AggregateStatus(agg.Status)
+	}
+	rollups, err := s.store.GetAggregateRollups(ctx, dash, svc, now.Add(-6*time.Hour), now)
+	if err != nil || len(rollups) == 0 {
+		return status.AggregateOperational
+	}
+	var latestEpoch int64
+	for epoch := range rollups {
+		if epoch > latestEpoch {
+			latestEpoch = epoch
+		}
+	}
+	return status.AggregateStatus(rollups[latestEpoch].Status)
 }
 
 func (s *Server) dailyBars(ctx context.Context, dash, svc string) []dayBar {
