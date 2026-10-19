@@ -2,7 +2,7 @@
 
 > A lightweight, extensible Kubernetes Operator that probes *any* endpoint-HTTP/JSON, TCP, DNS, ICMP, Trino, OpenSearch, and more-and routes alerts to Slack or e-mail with a simple Custom Resource.  
 
-![Go](https://img.shields.io/badge/Go-%3E%3D1.23-blue?logo=go)
+![Go](https://img.shields.io/badge/Go-%3E%3D1.27.2-blue?logo=go)
 ![License](https://img.shields.io/github/license/LiciousTech/endpoint-monitoring-operator)
 
 ---
