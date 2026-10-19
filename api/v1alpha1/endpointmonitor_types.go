@@ -157,6 +157,9 @@ type EndpointMonitorStatus struct {
 	// LastNotifiedStatusChange is when the status in lastNotifiedStatus began.
 	// +optional
 	LastNotifiedStatusChange metav1.Time `json:"lastNotifiedStatusChange,omitempty"`
+	// ObservedGeneration is the spec generation the last check ran against.
+	// +optional
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 }
 
 //+kubebuilder:object:root=true

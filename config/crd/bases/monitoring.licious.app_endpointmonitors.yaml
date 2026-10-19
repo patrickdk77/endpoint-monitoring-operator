@@ -325,6 +325,11 @@ spec:
               lastStatusChange:
                 format: date-time
                 type: string
+              observedGeneration:
+                description: ObservedGeneration is the spec generation the last check
+                  ran against.
+                format: int64
+                type: integer
             type: object
         required:
         - spec

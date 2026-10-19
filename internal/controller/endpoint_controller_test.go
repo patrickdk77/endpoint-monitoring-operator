@@ -20,6 +20,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -43,17 +44,21 @@ var _ = Describe("EndpointMonitor Controller", func() {
 		recorder *events.FakeRecorder
 		r        *EndpointMonitorReconciler
 		cleanup  []func()
+		probes   *atomic.Int32
 	)
 
 	BeforeEach(func() {
 		ln, err := net.Listen("tcp4", "127.0.0.1:0")
 		Expect(err).NotTo(HaveOccurred())
+		accepted := &atomic.Int32{}
+		probes = accepted
 		go func() {
 			for {
 				c, err := ln.Accept()
 				if err != nil {
 					return
 				}
+				accepted.Add(1)
 				c.Close()
 			}
 		}()
@@ -122,9 +127,11 @@ var _ = Describe("EndpointMonitor Controller", func() {
 		It("waits for the check interval before checking again", func() {
 			nn := create("valid-again", validSpec())
 			reconcileOnce(nn)
+			Eventually(probes.Load).Should(BeEquivalentTo(1))
 			checked := get(nn).Status.LastCheckedTime
 			res := reconcileOnce(nn)
 			Expect(res.RequeueAfter).To(And(BeNumerically(">", 0), BeNumerically("<=", 60*time.Second)))
+			Consistently(probes.Load, 200*time.Millisecond).Should(BeEquivalentTo(1))
 			Expect(get(nn).Status.LastCheckedTime).To(Equal(checked))
 		})
 

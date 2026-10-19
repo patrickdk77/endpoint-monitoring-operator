@@ -13,8 +13,11 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	monitorv1alpha1 "github.com/patrickdk77/endpoint-monitoring-operator/api/v1alpha1"
 	notifierTypes "github.com/patrickdk77/endpoint-monitoring-operator/internal/notifier"
@@ -30,6 +33,9 @@ type EndpointMonitorReconciler struct {
 	client.Client
 	Scheme   *runtime.Scheme
 	Recorder events.EventRecorder
+	// MaxConcurrentReconciles is the most monitors checked at once; values
+	// below 1 mean 1.
+	MaxConcurrentReconciles int
 }
 
 func (r *EndpointMonitorReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -59,8 +65,9 @@ func (r *EndpointMonitorReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	checkInterval := time.Duration(monitor.Spec.CheckInterval) * time.Second
 	nextCheckTime := monitor.Status.LastCheckedTime.Time.Add(checkInterval)
 
-	if !monitor.Status.LastCheckedTime.IsZero() && now.Before(nextCheckTime) {
-		requeueAfter := time.Until(nextCheckTime)
+	specChanged := monitor.Status.ObservedGeneration != 0 && monitor.Status.ObservedGeneration != monitor.Generation
+	if !monitor.Status.LastCheckedTime.IsZero() && now.Before(nextCheckTime) && !specChanged {
+		requeueAfter := nextCheckTime.Sub(now)
 		logger.Info("Skipping reconcile; checkInterval not yet elapsed",
 			"name", monitor.Name,
 			"lastChecked", monitor.Status.LastCheckedTime.Time,
@@ -113,26 +120,20 @@ func (r *EndpointMonitorReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	monitor.Status.LastNotifiedStatus = &notified
 	monitor.Status.LastNotifiedStatusChange = notifiedSince
 
-	updated := false
 	nowMetaTime := metav1.NewTime(now)
 	if monitor.Status.LastStatus != noticeValues.Status {
 		monitor.Status.LastStatus = noticeValues.Status
 		monitor.Status.LastStatusChange = nowMetaTime
-		updated = true
 	}
-	if monitor.Status.LastCheckedTime != nowMetaTime {
-		monitor.Status.LastCheckedTime = nowMetaTime
-		updated = true
-	}
+	monitor.Status.LastCheckedTime = nowMetaTime
+	monitor.Status.ObservedGeneration = monitor.Generation
 
 	// Save updates to resource beofre sending notification, incase of notification failure
 	// also fix out of order updates if the notification takes longer than the next check interval
 	// and the next update saves before this cone
-	if updated {
-		if err := r.Status().Update(ctx, &monitor); err != nil {
-			logger.Error(err, "Failed to update EndpointMonitor status")
-			return ctrl.Result{}, err
-		}
+	if err := r.Status().Update(ctx, &monitor); err != nil {
+		logger.Error(err, "Failed to update EndpointMonitor status")
+		return ctrl.Result{}, err
 	}
 
 	// calculate notice values that are not time sensitive
@@ -201,6 +202,9 @@ func (r *EndpointMonitorReconciler) cannotCheck(ctx context.Context, monitor *mo
 
 func (r *EndpointMonitorReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&monitorv1alpha1.EndpointMonitor{}).
+		For(&monitorv1alpha1.EndpointMonitor{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
+		// The priority queue keeps monitors listed at startup at low priority
+		// for good, so newer monitors could starve them under load.
+		WithOptions(controller.Options{MaxConcurrentReconciles: r.MaxConcurrentReconciles, UsePriorityQueue: new(false)}).
 		Complete(r)
 }
