@@ -18,16 +18,14 @@ type HTTPDriver struct {
 	httpCheck *v1.HttpCheck
 }
 
-func NewHTTPDriver(endpoint string, check *v1.TlsCheck, httpCheck *v1.HttpCheck) (Driver, error) {
+func NewHTTPDriver(endpoint, family string, check *v1.TlsCheck, httpCheck *v1.HttpCheck) (Driver, error) {
 	if endpoint == "" {
 		return nil, fmt.Errorf("endpoint cannot be empty")
 	}
 
 	return &HTTPDriver{
-		endpoint: endpoint,
-		client: &http.Client{
-			Timeout: 30 * time.Second,
-		},
+		endpoint:  endpoint,
+		client:    httpClient(family, 30*time.Second),
 		check:     check,
 		httpCheck: httpCheck,
 	}, nil

@@ -18,7 +18,7 @@ type HTTPJSONDriver struct {
 	assertions map[string]string
 }
 
-func NewHTTPJSONDriver(endpoint string, check *v1.HttpJsonCheck) (Driver, error) {
+func NewHTTPJSONDriver(endpoint, family string, check *v1.HttpJsonCheck) (Driver, error) {
 	if endpoint == "" || check == nil {
 		return nil, fmt.Errorf("invalid endpoint or config for http-json")
 	}
@@ -26,9 +26,7 @@ func NewHTTPJSONDriver(endpoint string, check *v1.HttpJsonCheck) (Driver, error)
 	return &HTTPJSONDriver{
 		endpoint:   endpoint,
 		assertions: check.JsonAssertions,
-		client: &http.Client{
-			Timeout: 30 * time.Second,
-		},
+		client:     httpClient(family, 30*time.Second),
 	}, nil
 }
 

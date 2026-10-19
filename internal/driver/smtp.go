@@ -16,11 +16,12 @@ import (
 
 type SMTPDriver struct {
 	endpoint string
+	family   string
 	auth     smtp.Auth
 	check    *v1.SmtpCheck
 }
 
-func NewSMTPDriver(endpoint string, check *v1.SmtpCheck, namespace string, client client.Client) (Driver, error) {
+func NewSMTPDriver(endpoint, family string, check *v1.SmtpCheck, namespace string, client client.Client) (Driver, error) {
 	if endpoint == "" {
 		return nil, fmt.Errorf("endpoint cannot be empty")
 	}
@@ -53,6 +54,7 @@ func NewSMTPDriver(endpoint string, check *v1.SmtpCheck, namespace string, clien
 	}
 	return &SMTPDriver{
 		endpoint: endpoint,
+		family:   family,
 		auth:     auth,
 		check:    check,
 	}, nil
@@ -77,14 +79,14 @@ func (t *SMTPDriver) Check() (*CheckResult, error) {
 	if t.check.Tls {
 		tlsConfig := &tls.Config{ServerName: hostPart}
 		dialer := &net.Dialer{Timeout: 10 * time.Second}
-		conn, err = tls.DialWithDialer(dialer, "tcp", host, tlsConfig)
+		var tlsConn *tls.Conn
+		tlsConn, err = tls.DialWithDialer(dialer, familyNetwork("tcp", t.family), host, tlsConfig)
 		if err == nil {
-			if tlsConn, ok := conn.(*tls.Conn); ok {
-				err = common.ResolveAndVerifyDANE(hostPart, port, tlsConn.ConnectionState().PeerCertificates)
-			}
+			conn = tlsConn
+			err = common.ResolveAndVerifyDANE(hostPart, port, tlsConn.ConnectionState().PeerCertificates)
 		}
 	} else {
-		conn, err = net.DialTimeout("tcp", host, 10*time.Second)
+		conn, err = net.DialTimeout(familyNetwork("tcp", t.family), host, 10*time.Second)
 	}
 
 	if err == nil {

@@ -8,20 +8,21 @@ import (
 
 type TCPDriver struct {
 	endpoint string
+	family   string
 }
 
-func NewTCPDriver(endpoint string) (Driver, error) {
+func NewTCPDriver(endpoint, family string) (Driver, error) {
 	if endpoint == "" {
 		return nil, fmt.Errorf("endpoint cannot be empty")
 	}
 
-	return &TCPDriver{endpoint: endpoint}, nil
+	return &TCPDriver{endpoint: endpoint, family: family}, nil
 }
 
 func (t *TCPDriver) Check() (*CheckResult, error) {
 	start := time.Now()
 
-	conn, err := net.DialTimeout("tcp", t.endpoint, 10*time.Second)
+	conn, err := net.DialTimeout(familyNetwork("tcp", t.family), t.endpoint, 10*time.Second)
 	duration := time.Since(start)
 
 	result := &CheckResult{

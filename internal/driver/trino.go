@@ -25,7 +25,7 @@ type TrinoInfoResponse struct {
 	NodeVersion NodeVersion `json:"nodeVersion"`
 }
 
-func NewTrinoDriver(endpoint string) (Driver, error) {
+func NewTrinoDriver(endpoint, family string) (Driver, error) {
 	if endpoint == "" {
 		return nil, fmt.Errorf("endpoint cannot be empty")
 	}
@@ -34,9 +34,7 @@ func NewTrinoDriver(endpoint string) (Driver, error) {
 
 	return &TrinoDriver{
 		endpoint: endpoint,
-		client: &http.Client{
-			Timeout: 30 * time.Second,
-		},
+		client:   httpClient(family, 30*time.Second),
 	}, nil
 }
 

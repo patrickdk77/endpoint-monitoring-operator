@@ -68,6 +68,7 @@ Key fields in the spec (abridged):
 driver - which probe implementation to use
 endpoint - URL/host/cluster depending on driver
 checkInterval - seconds between probes
+ipFamily - optional; ipv4 or ipv6 to probe over one family only (direct, no HTTP proxy), all to probe over both and fail if either fails
 notify - list of one or more notifiers (Slack, e-mail)
 Driver-specific blocks - e.g. httpJsonCheck for http-json driver
 ```

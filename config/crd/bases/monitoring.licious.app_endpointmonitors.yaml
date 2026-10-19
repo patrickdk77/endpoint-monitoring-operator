@@ -74,6 +74,19 @@ spec:
                 required:
                 - jsonAssertions
                 type: object
+              ipFamily:
+                description: |-
+                  IpFamily set to ipv4 or ipv6 connects to the endpoint over that address
+                  family only. A pinned family connects directly, ignoring HTTP proxy
+                  settings, and redirects stay on that family. all runs each check over
+                  both families, fails if either fails, and reports the slower response
+                  time. Omit the field to leave the choice to the system. For the dns
+                  driver it applies to the connection to the DNS server.
+                enum:
+                - ipv4
+                - ipv6
+                - all
+                type: string
               mysqlCheck:
                 properties:
                   maxSecondsBehindMaster:

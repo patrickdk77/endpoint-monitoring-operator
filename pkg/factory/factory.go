@@ -108,29 +108,48 @@ func NewDriver(driverType string, endpoint string, monitor *v1alpha1.EndpointMon
 
 // CreateDriver implements the factory pattern for drivers
 func (f *DriverFactory) CreateDriver(driverType string, endpoint string, monitor *v1alpha1.EndpointMonitor, namespace string, client client.Client) (driver.Driver, error) {
+	switch monitor.Spec.IpFamily {
+	case "", driver.FamilyIPv4, driver.FamilyIPv6:
+		return f.createFamilyDriver(driverType, endpoint, monitor.Spec.IpFamily, monitor, namespace, client)
+	case driver.FamilyAll:
+		v4, err := f.createFamilyDriver(driverType, endpoint, driver.FamilyIPv4, monitor, namespace, client)
+		if err != nil {
+			return nil, err
+		}
+		v6, err := f.createFamilyDriver(driverType, endpoint, driver.FamilyIPv6, monitor, namespace, client)
+		if err != nil {
+			return nil, err
+		}
+		return driver.NewBothFamiliesDriver(v4, v6), nil
+	default:
+		return nil, fmt.Errorf("unsupported ipFamily: %s", monitor.Spec.IpFamily)
+	}
+}
+
+func (f *DriverFactory) createFamilyDriver(driverType, endpoint, family string, monitor *v1alpha1.EndpointMonitor, namespace string, client client.Client) (driver.Driver, error) {
 	switch driverType {
 	case "http":
-		return driver.NewHTTPDriver(endpoint, monitor.Spec.TlsCheck, monitor.Spec.HttpCheck)
+		return driver.NewHTTPDriver(endpoint, family, monitor.Spec.TlsCheck, monitor.Spec.HttpCheck)
 	case "http-json":
-		return driver.NewHTTPJSONDriver(endpoint, monitor.Spec.HttpJsonCheck)
+		return driver.NewHTTPJSONDriver(endpoint, family, monitor.Spec.HttpJsonCheck)
 	case "smtp":
-		return driver.NewSMTPDriver(endpoint, monitor.Spec.SmtpCheck, namespace, client)
+		return driver.NewSMTPDriver(endpoint, family, monitor.Spec.SmtpCheck, namespace, client)
 	case "redis":
-		return driver.NewREDISDriver(endpoint, monitor.Spec.RedisCheck, namespace, client)
+		return driver.NewREDISDriver(endpoint, family, monitor.Spec.RedisCheck, namespace, client)
 	case "tls":
-		return driver.NewTLSDriver(endpoint, monitor.Spec.TlsCheck)
+		return driver.NewTLSDriver(endpoint, family, monitor.Spec.TlsCheck)
 	case "tcp":
-		return driver.NewTCPDriver(endpoint)
+		return driver.NewTCPDriver(endpoint, family)
 	case "dns":
-		return driver.NewDNSDriver(endpoint, monitor.Spec.DnsCheck)
+		return driver.NewDNSDriver(endpoint, family, monitor.Spec.DnsCheck)
 	case "ping":
-		return driver.NewPingDriver(endpoint)
+		return driver.NewPingDriver(endpoint, family)
 	case "trino":
-		return driver.NewTrinoDriver(endpoint)
+		return driver.NewTrinoDriver(endpoint, family)
 	case "opensearch":
-		return driver.NewOpenSearchDriver(endpoint)
+		return driver.NewOpenSearchDriver(endpoint, family)
 	case "mysql":
-		return driver.NewMYSQLDriver(endpoint, monitor.Spec.MysqlCheck, namespace, client)
+		return driver.NewMYSQLDriver(endpoint, family, monitor.Spec.MysqlCheck, namespace, client)
 	default:
 		return nil, fmt.Errorf("unsupported driver type: %s", driverType)
 	}

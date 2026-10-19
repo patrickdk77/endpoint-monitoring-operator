@@ -8,21 +8,22 @@ import (
 
 type PingDriver struct {
 	endpoint string
+	family   string
 }
 
-func NewPingDriver(endpoint string) (Driver, error) {
+func NewPingDriver(endpoint, family string) (Driver, error) {
 	if endpoint == "" {
 		return nil, fmt.Errorf("endpoint cannot be empty")
 	}
 
-	return &PingDriver{endpoint: endpoint}, nil
+	return &PingDriver{endpoint: endpoint, family: family}, nil
 }
 
 func (p *PingDriver) Check() (*CheckResult, error) {
 	start := time.Now()
 
 	// Simple connectivity check
-	conn, err := net.DialTimeout("tcp", p.endpoint+":80", 5*time.Second)
+	conn, err := net.DialTimeout(familyNetwork("tcp", p.family), p.endpoint+":80", 5*time.Second)
 	duration := time.Since(start)
 
 	result := &CheckResult{

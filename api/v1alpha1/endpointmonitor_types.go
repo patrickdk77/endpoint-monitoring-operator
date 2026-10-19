@@ -60,6 +60,15 @@ type EndpointMonitorSpec struct {
 	TlsCheck      *TlsCheck      `json:"tlsCheck,omitempty"`      // only relevant for driver = "tls", "http"
 	DnsCheck      *DnsCheck      `json:"dnsCheck,omitempty"`      // only relevant for driver = "dns"
 	MysqlCheck    *MysqlCheck    `json:"mysqlCheck,omitempty"`    // only relevant for driver = "mysql"
+	// IpFamily set to ipv4 or ipv6 connects to the endpoint over that address
+	// family only. A pinned family connects directly, ignoring HTTP proxy
+	// settings, and redirects stay on that family. all runs each check over
+	// both families, fails if either fails, and reports the slower response
+	// time. Omit the field to leave the choice to the system. For the dns
+	// driver it applies to the connection to the DNS server.
+	// +kubebuilder:validation:Enum=ipv4;ipv6;all
+	// +optional
+	IpFamily string `json:"ipFamily,omitempty"`
 }
 
 // NotifyConfig holds notifier configurations

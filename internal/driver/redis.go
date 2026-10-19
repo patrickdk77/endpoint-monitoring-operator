@@ -14,11 +14,12 @@ import (
 
 type REDISDriver struct {
 	endpoint string
+	family   string
 	auth     string
 	check    *v1.RedisCheck
 }
 
-func NewREDISDriver(endpoint string, check *v1.RedisCheck, namespace string, client client.Client) (Driver, error) {
+func NewREDISDriver(endpoint, family string, check *v1.RedisCheck, namespace string, client client.Client) (Driver, error) {
 	if endpoint == "" {
 		return nil, fmt.Errorf("endpoint cannot be empty")
 	}
@@ -46,6 +47,7 @@ func NewREDISDriver(endpoint string, check *v1.RedisCheck, namespace string, cli
 	}
 	return &REDISDriver{
 		endpoint: endpoint,
+		family:   family,
 		auth:     auth,
 		check:    check,
 	}, nil
@@ -71,10 +73,14 @@ func (t *REDISDriver) Check() (*CheckResult, error) {
 	if t.check.Tls {
 		tlsConfig := &tls.Config{ServerName: hostPart}
 		dialer := &net.Dialer{Timeout: 10 * time.Second}
-		conn, err = tls.DialWithDialer(dialer, "tcp", host, tlsConfig)
+		var tlsConn *tls.Conn
+		tlsConn, err = tls.DialWithDialer(dialer, familyNetwork("tcp", t.family), host, tlsConfig)
+		if err == nil {
+			conn = tlsConn
+		}
 	} else {
 		host = net.JoinHostPort(host, port)
-		conn, err = net.DialTimeout("tcp", t.endpoint, 10*time.Second)
+		conn, err = net.DialTimeout(familyNetwork("tcp", t.family), t.endpoint, 10*time.Second)
 	}
 	if err == nil {
 		err = conn.SetDeadline(time.Now().Add(10 * time.Second))

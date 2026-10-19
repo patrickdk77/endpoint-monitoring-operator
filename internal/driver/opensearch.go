@@ -33,7 +33,7 @@ type OpenSearchClusterHealth struct {
 	ActiveShardsPercentAsNumber float64 `json:"active_shards_percent_as_number"`
 }
 
-func NewOpenSearchDriver(endpoint string) (Driver, error) {
+func NewOpenSearchDriver(endpoint, family string) (Driver, error) {
 	if endpoint == "" {
 		return nil, fmt.Errorf("endpoint cannot be empty")
 	}
@@ -42,9 +42,7 @@ func NewOpenSearchDriver(endpoint string) (Driver, error) {
 
 	return &OpenSearchDriver{
 		endpoint: endpoint,
-		client: &http.Client{
-			Timeout: 30 * time.Second,
-		},
+		client:   httpClient(family, 30*time.Second),
 	}, nil
 }
 

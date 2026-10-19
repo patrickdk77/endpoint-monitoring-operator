@@ -13,15 +13,16 @@ import (
 
 type DNSDriver struct {
 	endpoint string
+	family   string
 	check    *v1.DnsCheck
 }
 
-func NewDNSDriver(endpoint string, check *v1.DnsCheck) (Driver, error) {
+func NewDNSDriver(endpoint, family string, check *v1.DnsCheck) (Driver, error) {
 	if endpoint == "" {
 		return nil, fmt.Errorf("endpoint cannot be empty")
 	}
 
-	return &DNSDriver{endpoint: endpoint, check: check}, nil
+	return &DNSDriver{endpoint: endpoint, family: family, check: check}, nil
 }
 
 func (d *DNSDriver) Check() (*CheckResult, error) {
@@ -33,6 +34,9 @@ func (d *DNSDriver) Check() (*CheckResult, error) {
 		resolver = &net.Resolver{
 			PreferGo: true,
 			Dial:     nil,
+		}
+		if d.family != "" {
+			resolver.Dial = familyDial(d.family)
 		}
 	} else {
 		var hostPart string
@@ -52,8 +56,12 @@ func (d *DNSDriver) Check() (*CheckResult, error) {
 			}
 			var host []string
 			host, err = net.LookupHost(hostPart) // We need to specify the dns server by ip address, so make sure
+			var addr string
 			if err == nil {
-				server := net.JoinHostPort(host[0], port)
+				addr, err = pickFamily(host, d.family)
+			}
+			if err == nil {
+				server := net.JoinHostPort(addr, port)
 				if d.check.Tls { // use DNSoverTLS server
 					tlsConfig := &tls.Config{ServerName: hostPart}
 					resolver = &net.Resolver{
@@ -61,7 +69,7 @@ func (d *DNSDriver) Check() (*CheckResult, error) {
 						Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
 							dialer := &net.Dialer{Timeout: 10 * time.Second}
 							tlsDialer := &tls.Dialer{NetDialer: dialer, Config: tlsConfig}
-							return tlsDialer.DialContext(ctx, network, server)
+							return tlsDialer.DialContext(ctx, familyNetwork(network, d.family), server)
 						},
 					}
 				} else { // Use normal specific dns server
@@ -69,7 +77,7 @@ func (d *DNSDriver) Check() (*CheckResult, error) {
 						PreferGo: true,
 						Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
 							dialer := &net.Dialer{Timeout: 10 * time.Second}
-							return dialer.DialContext(ctx, network, server)
+							return dialer.DialContext(ctx, familyNetwork(network, d.family), server)
 						},
 					}
 				}

@@ -15,12 +15,13 @@ import (
 
 type MYSQLDriver struct {
 	endpoint string
+	family   string
 	username string
 	password string
 	check    *v1.MysqlCheck
 }
 
-func NewMYSQLDriver(endpoint string, check *v1.MysqlCheck, namespace string, client client.Client) (Driver, error) {
+func NewMYSQLDriver(endpoint, family string, check *v1.MysqlCheck, namespace string, client client.Client) (Driver, error) {
 	if endpoint == "" {
 		return nil, fmt.Errorf("endpoint cannot be empty")
 	}
@@ -42,6 +43,7 @@ func NewMYSQLDriver(endpoint string, check *v1.MysqlCheck, namespace string, cli
 
 	return &MYSQLDriver{
 		endpoint: endpoint,
+		family:   family,
 		username: username,
 		password: password,
 		check:    check,
@@ -58,7 +60,7 @@ func (m *MYSQLDriver) Check() (*CheckResult, error) {
 	}
 	host := net.JoinHostPort(hostPart, port)
 
-	dsn := fmt.Sprintf("%s:%s@tcp(%s)/", m.username, m.password, host)
+	dsn := fmt.Sprintf("%s:%s@%s(%s)/", m.username, m.password, familyNetwork("tcp", m.family), host)
 	db, err := sql.Open("mysql", dsn)
 	if err != nil {
 		return &CheckResult{

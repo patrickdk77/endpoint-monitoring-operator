@@ -41,7 +41,9 @@ type Driver interface {
 }
 ```
 
-Add your driver to the DriverFactory in `pkg/factory/factory.go`
+Have the constructor take the monitor's address family (`""`, `ipv4` or `ipv6`) and open every connection to the endpoint through `familyNetwork` or `httpClient` in `internal/driver/family.go`, so `spec.ipFamily` applies to the new driver.
+
+Add your driver to `createFamilyDriver` in `pkg/factory/factory.go`. When `ipFamily` is `all`, the factory builds it once per family.
 
 ## Add a New Notifier
 
