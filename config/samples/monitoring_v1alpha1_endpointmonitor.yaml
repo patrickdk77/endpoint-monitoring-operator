@@ -6,4 +6,10 @@ metadata:
     app.kubernetes.io/managed-by: kustomize
   name: endpointmonitor-sample
 spec:
-  # TODO(user): Add fields here
+  driver: http
+  endpoint: https://example.com/
+  checkInterval: 60
+  notify:
+    slack:
+      enabled: true
+      webhookUrl: https://hooks.slack.com/services/XXXXXXXXX/YYYYYYYYY/ZZZZZZZZZZZZ

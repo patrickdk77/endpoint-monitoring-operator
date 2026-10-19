@@ -10,6 +10,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/events"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	monitoringv1alpha1 "github.com/patrickdk77/endpoint-monitoring-operator/api/v1alpha1"
@@ -67,7 +68,7 @@ var _ = Describe("EndpointMonitor ipFamily", func() {
 		}))
 		defer hook.Close()
 
-		r := &EndpointMonitorReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
+		r := &EndpointMonitorReconciler{Client: k8sClient, Scheme: k8sClient.Scheme(), Recorder: events.NewFakeRecorder(10)}
 		for family, want := range map[string]string{"ipv4": "success", "ipv6": "failure", "all": "failure"} {
 			m := newMonitor("family-"+family, ln.Addr().String(), family, hook.URL)
 			Expect(k8sClient.Create(ctx, m)).To(Succeed())

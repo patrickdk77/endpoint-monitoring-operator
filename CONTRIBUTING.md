@@ -45,6 +45,8 @@ Have the constructor take the monitor's address family (`""`, `ipv4` or `ipv6`) 
 
 Add your driver to `createFamilyDriver` in `pkg/factory/factory.go`. When `ipFamily` is `all`, the factory builds it once per family.
 
+Add the driver's name to the `Enum` marker on `EndpointMonitorSpec.Driver` in `api/v1alpha1/endpointmonitor_types.go` and run `make manifests`. The API server rejects any driver name missing from that list.
+
 ## Add a New Notifier
 
 Want to send alerts to Discord, PagerDuty, SES?

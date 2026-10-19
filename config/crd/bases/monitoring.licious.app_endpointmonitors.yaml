@@ -39,6 +39,8 @@ spec:
             description: EndpointMonitorSpec defines the desired state of EndpointMonitor
             properties:
               checkInterval:
+                maximum: 31536000
+                minimum: 1
                 type: integer
               dnsCheck:
                 properties:
@@ -52,6 +54,18 @@ spec:
                     type: string
                 type: object
               driver:
+                enum:
+                - http
+                - http-json
+                - smtp
+                - redis
+                - tls
+                - tcp
+                - dns
+                - ping
+                - trino
+                - opensearch
+                - mysql
                 type: string
               endpoint:
                 type: string
@@ -107,6 +121,10 @@ spec:
                     properties:
                       alertOn:
                         items:
+                          enum:
+                          - success
+                          - failure
+                          - change
                           type: string
                         type: array
                       enabled:
@@ -122,6 +140,10 @@ spec:
                     properties:
                       alertOn:
                         items:
+                          enum:
+                          - success
+                          - failure
+                          - change
                           type: string
                         type: array
                       body:
@@ -156,6 +178,10 @@ spec:
                     properties:
                       alertOn:
                         items:
+                          enum:
+                          - success
+                          - failure
+                          - change
                           type: string
                         type: array
                       enabled:
@@ -203,6 +229,10 @@ spec:
                     properties:
                       alertOn:
                         items:
+                          enum:
+                          - success
+                          - failure
+                          - change
                           type: string
                         type: array
                       authorization:
@@ -284,6 +314,8 @@ spec:
                 format: date-time
                 type: string
             type: object
+        required:
+        - spec
         type: object
     served: true
     storage: true

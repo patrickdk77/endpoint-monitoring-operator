@@ -47,10 +47,16 @@ type MysqlCheck struct {
 	MaxSecondsBehindMaster *int      `json:"maxSecondsBehindMaster,omitempty"`
 }
 
+// MaxCheckInterval is the largest checkInterval, in seconds, the CRD accepts.
+const MaxCheckInterval = 31536000
+
 // EndpointMonitorSpec defines the desired state of EndpointMonitor
 type EndpointMonitorSpec struct {
-	Driver        string         `json:"driver"`        // ex: "opensearch", "trino", "http", "http-json"
-	Endpoint      string         `json:"endpoint"`      // target service URL
+	// +kubebuilder:validation:Enum=http;http-json;smtp;redis;tls;tcp;dns;ping;trino;opensearch;mysql
+	Driver   string `json:"driver"`   // ex: "opensearch", "trino", "http", "http-json"
+	Endpoint string `json:"endpoint"` // target service URL
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=31536000
 	CheckInterval int            `json:"checkInterval"` // in seconds
 	Notify        NotifyConfig   `json:"notify"`
 	HttpCheck     *HttpCheck     `json:"httpCheck,omitempty"`     // only relevant for driver = "http"
@@ -99,14 +105,16 @@ type WebhookConfig struct {
 	Authorization SecretRef `json:"authorization,omitempty"` // Bearer or other token needed
 	ContentType   string    `json:"contentType,omitempty"`   // "application/json", "application/x-www-form-urlencoded", ...
 	Contents      string    `json:"contents,omitempty"`      // template, if empty will use GET instead of POST
-	AlertOn       []string  `json:"alertOn,omitempty"`       // values: "success", "failure", "change"
+	// +kubebuilder:validation:items:Enum=success;failure;change
+	AlertOn []string `json:"alertOn,omitempty"` // values: "success", "failure", "change"
 }
 
 // SlackConfig defines Slack notifier config
 type SlackConfig struct {
-	Enabled    bool     `json:"enabled"`
-	WebhookURL string   `json:"webhookUrl"`
-	AlertOn    []string `json:"alertOn,omitempty"` // values: "success", "failure", "change"
+	Enabled    bool   `json:"enabled"`
+	WebhookURL string `json:"webhookUrl"`
+	// +kubebuilder:validation:items:Enum=success;failure;change
+	AlertOn []string `json:"alertOn,omitempty"` // values: "success", "failure", "change"
 }
 
 // EmailConfig is placeholder (no-op for now)
@@ -119,7 +127,8 @@ type EmailConfig struct {
 	Host           string    `json:"host,omitempty"`    // Host:Port
 	Subject        string    `json:"subject,omitempty"` // subject template
 	Body           string    `json:"body,omitempty"`    // message body template
-	AlertOn        []string  `json:"alertOn,omitempty"` // values: "success", "failure"
+	// +kubebuilder:validation:items:Enum=success;failure;change
+	AlertOn []string `json:"alertOn,omitempty"` // values: "success", "failure", "change"
 }
 
 type SecretRef struct {
@@ -128,9 +137,10 @@ type SecretRef struct {
 
 // DiscordConfig defines Discord notifier config
 type DiscordConfig struct {
-	Enabled    bool     `json:"enabled"`
-	WebhookURL string   `json:"webhookUrl"`
-	AlertOn    []string `json:"alertOn,omitempty"` // values: "success", "failure"
+	Enabled    bool   `json:"enabled"`
+	WebhookURL string `json:"webhookUrl"`
+	// +kubebuilder:validation:items:Enum=success;failure;change
+	AlertOn []string `json:"alertOn,omitempty"` // values: "success", "failure", "change"
 }
 
 // EndpointMonitorStatus defines the observed state of EndpointMonitor
@@ -147,7 +157,7 @@ type EndpointMonitor struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   EndpointMonitorSpec   `json:"spec,omitempty"`
+	Spec   EndpointMonitorSpec   `json:"spec"`
 	Status EndpointMonitorStatus `json:"status,omitempty"`
 }
 

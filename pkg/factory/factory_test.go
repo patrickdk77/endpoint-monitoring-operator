@@ -2,8 +2,11 @@ package factory
 
 import (
 	"net"
+	"os"
 	"strings"
 	"testing"
+
+	"sigs.k8s.io/yaml"
 
 	"github.com/patrickdk77/endpoint-monitoring-operator/api/v1alpha1"
 )
@@ -87,15 +90,16 @@ func TestCreateDriverAllChecksBothFamilies(t *testing.T) {
 	}
 }
 
+var testEndpoints = map[string]string{
+	"http": "http://127.0.0.1:1/", "http-json": "http://127.0.0.1:1/",
+	"opensearch": "http://127.0.0.1:1", "trino": "http://127.0.0.1:1",
+	"smtp": "127.0.0.1:1", "redis": "127.0.0.1:1", "tls": "127.0.0.1:1",
+	"tcp": "127.0.0.1:1", "dns": "example.test", "ping": "127.0.0.1",
+	"mysql": "127.0.0.1:1",
+}
+
 func TestCreateDriverEveryTypeEveryFamily(t *testing.T) {
-	endpoints := map[string]string{
-		"http": "http://127.0.0.1:1/", "http-json": "http://127.0.0.1:1/",
-		"opensearch": "http://127.0.0.1:1", "trino": "http://127.0.0.1:1",
-		"smtp": "127.0.0.1:1", "redis": "127.0.0.1:1", "tls": "127.0.0.1:1",
-		"tcp": "127.0.0.1:1", "dns": "example.test", "ping": "127.0.0.1",
-		"mysql": "127.0.0.1:1",
-	}
-	for driverType, endpoint := range endpoints {
+	for driverType, endpoint := range testEndpoints {
 		for _, family := range []string{"", "ipv4", "ipv6", "all"} {
 			m := monitor(driverType, endpoint, family)
 			d, err := NewDriver(driverType, endpoint, m, "default", nil)
@@ -110,20 +114,13 @@ func TestCreateDriverEveryTypeEveryFamily(t *testing.T) {
 }
 
 func TestCreateDriverWiresFamilyForEveryType(t *testing.T) {
-	endpoints := map[string]string{
-		"http": "http://127.0.0.1:1/", "http-json": "http://127.0.0.1:1/",
-		"opensearch": "http://127.0.0.1:1", "trino": "http://127.0.0.1:1",
-		"smtp": "127.0.0.1:1", "redis": "127.0.0.1:1", "tls": "127.0.0.1:1",
-		"tcp": "127.0.0.1:1", "dns": "example.test", "ping": "127.0.0.1",
-		"mysql": "127.0.0.1:1",
-	}
 	refused := func(driverType string) string {
 		if driverType == "dns" {
 			return "no ipv6 address"
 		}
 		return "no suitable address"
 	}
-	for driverType, endpoint := range endpoints {
+	for driverType, endpoint := range testEndpoints {
 		t.Run(driverType, func(t *testing.T) {
 			m := monitor(driverType, endpoint, "ipv6")
 			m.Spec.DnsCheck.Server = "127.0.0.1:1"
@@ -148,6 +145,58 @@ func TestCreateDriverWiresFamilyForEveryType(t *testing.T) {
 				t.Fatalf("all did not check over ipv4 and then ipv6: success=%v %s", res.Success, res.Message)
 			}
 		})
+	}
+}
+
+func TestCRDDriverEnumMatchesFactory(t *testing.T) {
+	data, err := os.ReadFile("../../config/crd/bases/monitoring.licious.app_endpointmonitors.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var crd struct {
+		Spec struct {
+			Versions []struct {
+				Schema struct {
+					OpenAPIV3Schema struct {
+						Properties struct {
+							Spec struct {
+								Properties struct {
+									Driver struct {
+										Enum []string `json:"enum"`
+									} `json:"driver"`
+								} `json:"properties"`
+							} `json:"spec"`
+						} `json:"properties"`
+					} `json:"openAPIV3Schema"`
+				} `json:"schema"`
+			} `json:"versions"`
+		} `json:"spec"`
+	}
+	if err := yaml.Unmarshal(data, &crd); err != nil {
+		t.Fatal(err)
+	}
+	enum := crd.Spec.Versions[0].Schema.OpenAPIV3Schema.Properties.Spec.Properties.Driver.Enum
+	if len(enum) == 0 {
+		t.Fatal("no driver enum in the CRD")
+	}
+
+	tested := map[string]bool{}
+	for driverType := range testEndpoints {
+		tested[driverType] = true
+	}
+	for _, driverType := range enum {
+		if !tested[driverType] {
+			t.Errorf("driver %q is in the CRD enum but not in testEndpoints", driverType)
+			continue
+		}
+		delete(tested, driverType)
+		m := monitor(driverType, testEndpoints[driverType], "")
+		if _, err := NewDriver(driverType, testEndpoints[driverType], m, "default", nil); err != nil {
+			t.Errorf("driver %q is in the CRD enum but the factory rejects it: %v", driverType, err)
+		}
+	}
+	for driverType := range tested {
+		t.Errorf("driver %q is not in the CRD enum, so the API server rejects it", driverType)
 	}
 }
 
