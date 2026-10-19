@@ -148,6 +148,15 @@ type EndpointMonitorStatus struct {
 	LastCheckedTime  metav1.Time `json:"lastCheckedTime,omitempty"`
 	LastStatus       string      `json:"lastStatus,omitempty"` // e.g., success/failure
 	LastStatusChange metav1.Time `json:"lastStatusChange,omitempty"`
+	// LastNotifiedStatus is the status whose change alert has been sent, or
+	// that needed none because no notifier subscribes to change. Empty means
+	// no change alert has gone out yet. Absent, as on objects written before
+	// this field existed, means lastStatus counts as announced.
+	// +optional
+	LastNotifiedStatus *string `json:"lastNotifiedStatus,omitempty"`
+	// LastNotifiedStatusChange is when the status in lastNotifiedStatus began.
+	// +optional
+	LastNotifiedStatusChange metav1.Time `json:"lastNotifiedStatusChange,omitempty"`
 }
 
 //+kubebuilder:object:root=true

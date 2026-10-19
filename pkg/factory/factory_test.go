@@ -1,14 +1,18 @@
 package factory
 
 import (
+	"errors"
 	"net"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
 
 	"github.com/patrickdk77/endpoint-monitoring-operator/api/v1alpha1"
+	"github.com/patrickdk77/endpoint-monitoring-operator/internal/notifier"
 )
 
 func tcpListener(t *testing.T) string {
@@ -143,6 +147,66 @@ func TestCreateDriverWiresFamilyForEveryType(t *testing.T) {
 			v4, v6, found := strings.Cut(res.Message, "; ipv6: ")
 			if res.Success || !found || !strings.HasPrefix(v4, "ipv4: ") || strings.Contains(v4, refused(driverType)) || !strings.Contains(v6, refused(driverType)) {
 				t.Fatalf("all did not check over ipv4 and then ipv6: success=%v %s", res.Success, res.Message)
+			}
+		})
+	}
+}
+
+type fakeNotifier struct {
+	err   error
+	calls int
+}
+
+func (f *fakeNotifier) SendAlert(status string, values *notifier.NoticeValues, c client.Client) error {
+	f.calls++
+	return f.err
+}
+
+func TestCompositeNotifierReportsFailedNotifiers(t *testing.T) {
+	errSlack := errors.New("slack down")
+	errWebhook := errors.New("webhook down")
+	tests := []struct {
+		name      string
+		errs      []error
+		wantNames []string
+		wantErrs  []error
+	}{
+		{"all delivered", []error{nil, nil, nil}, nil, nil},
+		{"one failed", []error{errSlack, nil, nil}, []string{"slack"}, []error{errSlack}},
+		{"first and last failed", []error{errSlack, nil, errWebhook}, []string{"slack", "webhook"}, []error{errSlack, errWebhook}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			fakes := []*fakeNotifier{{err: tc.errs[0]}, {err: tc.errs[1]}, {err: tc.errs[2]}}
+			c := &CompositeNotifier{notifiers: []namedNotifier{
+				{"slack", fakes[0]}, {"discord", fakes[1]}, {"webhook", fakes[2]},
+			}}
+			err := c.SendAlert("failure", &notifier.NoticeValues{}, nil)
+			for i, f := range fakes {
+				if f.calls != 1 {
+					t.Fatalf("notifier %d called %d times; every notifier must be tried", i, f.calls)
+				}
+			}
+			if tc.wantNames == nil {
+				if err != nil {
+					t.Fatalf("err = %v, want nil", err)
+				}
+				return
+			}
+			var sendErr *SendError
+			if !errors.As(err, &sendErr) {
+				t.Fatalf("err %T is not a *SendError", err)
+			}
+			if !reflect.DeepEqual(sendErr.Notifiers, tc.wantNames) {
+				t.Fatalf("notifiers %v, want %v", sendErr.Notifiers, tc.wantNames)
+			}
+			for _, want := range tc.wantErrs {
+				if !errors.Is(err, want) {
+					t.Fatalf("%v does not wrap %v", err, want)
+				}
+			}
+			if !strings.HasPrefix(err.Error(), "failed to send alerts: [") {
+				t.Fatalf("error text changed: %q", err.Error())
 			}
 		})
 	}

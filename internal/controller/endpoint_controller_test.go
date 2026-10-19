@@ -114,6 +114,8 @@ var _ = Describe("EndpointMonitor Controller", func() {
 			m := get(nn)
 			Expect(m.Status.LastStatus).To(Equal("success"))
 			Expect(m.Status.LastCheckedTime.IsZero()).To(BeFalse())
+			Expect(m.Status.LastNotifiedStatus).To(HaveValue(Equal("success")), "no notifier subscribes to change, so none was needed")
+			Expect(m.Status.LastNotifiedStatusChange).To(Equal(m.Status.LastStatusChange))
 			Expect(recorder.Events).To(BeEmpty())
 		})
 

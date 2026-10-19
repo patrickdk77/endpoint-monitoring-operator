@@ -308,6 +308,18 @@ spec:
               lastCheckedTime:
                 format: date-time
                 type: string
+              lastNotifiedStatus:
+                description: |-
+                  LastNotifiedStatus is the status whose change alert has been sent, or
+                  that needed none because no notifier subscribes to change. Empty means
+                  no change alert has gone out yet. Absent, as on objects written before
+                  this field existed, means lastStatus counts as announced.
+                type: string
+              lastNotifiedStatusChange:
+                description: LastNotifiedStatusChange is when the status in lastNotifiedStatus
+                  began.
+                format: date-time
+                type: string
               lastStatus:
                 type: string
               lastStatusChange:

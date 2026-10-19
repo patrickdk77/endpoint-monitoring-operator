@@ -2,11 +2,13 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/events"
@@ -40,7 +42,7 @@ func (r *EndpointMonitorReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 	var monitor monitorv1alpha1.EndpointMonitor
 	if err := r.Get(ctx, req.NamespacedName, &monitor); err != nil {
-		if errors.IsNotFound(err) {
+		if apierrors.IsNotFound(err) {
 			logger.Info("EndpointMonitor resource not found. Ignoring since object must be deleted.")
 			return ctrl.Result{}, nil
 		}
@@ -84,27 +86,32 @@ func (r *EndpointMonitorReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return ctrl.Result{}, err
 	}
 
-	noticeValues := notifierTypes.NoticeValues{
-		// save values that can be overwritten by the Status().Update
-		LastStatus:       monitor.Status.LastStatus,
-		LastStatusChange: monitor.Status.LastStatusChange.Time.String(),
-		StatusTime:       now.Sub(monitor.Status.LastStatusChange.Time).Round(time.Second).String(),
-		Status:           "failure",
-		Healthy:          "unhealthy",
-		Endpoint:         driver.GetEndpoint(),
-		Driver:           driver.GetType(),
-		Name:             monitor.Name,
-		Message:          result.Message,
-		Response:         result.ResponseTime.String(),
-		ResponseTimeMs:   result.ResponseTime.Milliseconds(),
-		CurrentTime:      now.String(),
-		Namespace:        req.Namespace,
-		AlertMessage:     "",
+	notified, notifiedSince := monitor.Status.LastStatus, monitor.Status.LastStatusChange
+	if monitor.Status.LastNotifiedStatus != nil {
+		notified, notifiedSince = *monitor.Status.LastNotifiedStatus, monitor.Status.LastNotifiedStatusChange
 	}
+
+	noticeValues := notifierTypes.NoticeValues{
+		LastStatus:     monitor.Status.LastStatus,
+		Status:         "failure",
+		Healthy:        "unhealthy",
+		Endpoint:       driver.GetEndpoint(),
+		Driver:         driver.GetType(),
+		Name:           monitor.Name,
+		Message:        result.Message,
+		Response:       result.ResponseTime.String(),
+		ResponseTimeMs: result.ResponseTime.Milliseconds(),
+		CurrentTime:    now.String(),
+		Namespace:      req.Namespace,
+		AlertMessage:   "",
+	}
+	setStatusPeriod(&noticeValues, monitor.Status.LastStatusChange, now)
 	if result.Success {
 		noticeValues.Status = "success"
 		noticeValues.Healthy = "healthy"
 	}
+	monitor.Status.LastNotifiedStatus = &notified
+	monitor.Status.LastNotifiedStatusChange = notifiedSince
 
 	updated := false
 	nowMetaTime := metav1.NewTime(now)
@@ -132,14 +139,23 @@ func (r *EndpointMonitorReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	noticeValues.AlertMessage = fmt.Sprintf("%s monitor for %s is %s\n%s", noticeValues.Driver, noticeValues.Endpoint, noticeValues.Healthy, noticeValues.Message)
 
 	if err := notifier.SendAlert(noticeValues.Status, &noticeValues, r.Client); err != nil {
-		logger.Error(err, "Failed to send alert")
-		return ctrl.Result{}, err
+		r.alertFailed(ctx, &monitor, noticeValues.Status, err)
 	}
 
-	if noticeValues.LastStatus != noticeValues.Status {
-		if err := notifier.SendAlert("change", &noticeValues, r.Client); err != nil {
-			logger.Error(err, "Failed to send alert")
-			return ctrl.Result{}, err
+	if notified != noticeValues.Status {
+		changeValues := noticeValues
+		changeValues.LastStatus = notified
+		setStatusPeriod(&changeValues, notifiedSince, monitor.Status.LastStatusChange.Time)
+		if err := notifier.SendAlert("change", &changeValues, r.Client); err != nil {
+			r.alertFailed(ctx, &monitor, "change", err)
+		} else {
+			status := noticeValues.Status
+			monitor.Status.LastNotifiedStatus = &status
+			monitor.Status.LastNotifiedStatusChange = monitor.Status.LastStatusChange
+			if err := r.Status().Update(ctx, &monitor); err != nil {
+				logger.Error(err, "Failed to update EndpointMonitor status")
+				return ctrl.Result{}, err
+			}
 		}
 	}
 
@@ -149,6 +165,30 @@ func (r *EndpointMonitorReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		"responseTime", noticeValues.Response)
 
 	return ctrl.Result{RequeueAfter: checkInterval}, nil
+}
+
+// setStatusPeriod describes the period of the previous status: when it began
+// and how long it lasted until the given time.
+func setStatusPeriod(values *notifierTypes.NoticeValues, since metav1.Time, until time.Time) {
+	if since.IsZero() || until.IsZero() || until.Before(since.Time) {
+		values.LastStatusChange, values.StatusTime = "", ""
+		return
+	}
+	values.LastStatusChange = since.Time.String()
+	values.StatusTime = until.Sub(since.Time).Round(time.Second).String()
+}
+
+// alertFailed logs the error but leaves it out of the event, which namespace
+// viewers can read: notifier errors can include webhook URLs that act as
+// credentials.
+func (r *EndpointMonitorReconciler) alertFailed(ctx context.Context, monitor *monitorv1alpha1.EndpointMonitor, alert string, err error) {
+	log.FromContext(ctx).Error(err, "Failed to send alert", "name", monitor.Name, "alert", alert)
+	failed := "a notifier"
+	var sendErr *factory.SendError
+	if errors.As(err, &sendErr) {
+		failed = strings.Join(sendErr.Notifiers, ", ")
+	}
+	r.Recorder.Eventf(monitor, nil, corev1.EventTypeWarning, "AlertFailed", "Notify", "%s alert was not sent by %s; the operator log has the error", alert, failed)
 }
 
 // cannotCheck reports a monitor that cannot be checked and retries it after

@@ -29,14 +29,14 @@ func (f *NotifierFactory) CreateNotifier(config *v1alpha1.NotifyConfig) (notifie
 		return nil, fmt.Errorf("notify config is nil")
 	}
 
-	var notifiers []notifier.Notifier
+	var notifiers []namedNotifier
 
 	if config.Slack != nil && config.Slack.Enabled {
 		slackNotifier, err := slack.New(config.Slack)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create Slack notifier: %w", err)
 		}
-		notifiers = append(notifiers, slackNotifier)
+		notifiers = append(notifiers, namedNotifier{"slack", slackNotifier})
 	}
 
 	if config.Email != nil && config.Email.Enabled {
@@ -44,7 +44,7 @@ func (f *NotifierFactory) CreateNotifier(config *v1alpha1.NotifyConfig) (notifie
 		if err != nil {
 			return nil, fmt.Errorf("failed to create Email notifier: %w", err)
 		}
-		notifiers = append(notifiers, emailNotifier)
+		notifiers = append(notifiers, namedNotifier{"email", emailNotifier})
 	}
 
 	if config.Discord != nil && config.Discord.Enabled {
@@ -52,7 +52,7 @@ func (f *NotifierFactory) CreateNotifier(config *v1alpha1.NotifyConfig) (notifie
 		if err != nil {
 			return nil, fmt.Errorf("failed to create Discord notifier: %w", err)
 		}
-		notifiers = append(notifiers, discordNotifier)
+		notifiers = append(notifiers, namedNotifier{"discord", discordNotifier})
 	}
 
 	if config.Webhook != nil && config.Webhook.Enabled {
@@ -60,7 +60,7 @@ func (f *NotifierFactory) CreateNotifier(config *v1alpha1.NotifyConfig) (notifie
 		if err != nil {
 			return nil, fmt.Errorf("failed to create Webhook notifier: %w", err)
 		}
-		notifiers = append(notifiers, webhookNotifier)
+		notifiers = append(notifiers, namedNotifier{"webhook", webhookNotifier})
 	}
 
 	if config.Valkey != nil && config.Valkey.Enabled {
@@ -68,7 +68,7 @@ func (f *NotifierFactory) CreateNotifier(config *v1alpha1.NotifyConfig) (notifie
 		if err != nil {
 			return nil, fmt.Errorf("failed to create Valkey notifier: %w", err)
 		}
-		notifiers = append(notifiers, valkeyNotifier)
+		notifiers = append(notifiers, namedNotifier{"valkey", valkeyNotifier})
 	}
 
 	if len(notifiers) == 0 {
@@ -78,21 +78,41 @@ func (f *NotifierFactory) CreateNotifier(config *v1alpha1.NotifyConfig) (notifie
 	return &CompositeNotifier{notifiers: notifiers}, nil
 }
 
+type namedNotifier struct {
+	name string
+	notifier.Notifier
+}
+
 // CompositeNotifier handles multiple notification channels
 type CompositeNotifier struct {
-	notifiers []notifier.Notifier
+	notifiers []namedNotifier
+}
+
+// SendError lists the notifiers that failed to send an alert.
+type SendError struct {
+	Notifiers []string
+	Errs      []error
+}
+
+func (e *SendError) Error() string {
+	return fmt.Sprintf("failed to send alerts: %v", e.Errs)
+}
+
+func (e *SendError) Unwrap() []error {
+	return e.Errs
 }
 
 // SendAlert sends alerts to all configured notifiers
 func (c *CompositeNotifier) SendAlert(status string, values *notifier.NoticeValues, client client.Client) error {
-	var errs []error
+	var failed SendError
 	for _, n := range c.notifiers {
 		if err := n.SendAlert(status, values, client); err != nil {
-			errs = append(errs, err)
+			failed.Notifiers = append(failed.Notifiers, n.name)
+			failed.Errs = append(failed.Errs, err)
 		}
 	}
-	if len(errs) > 0 {
-		return fmt.Errorf("failed to send alerts: %v", errs)
+	if len(failed.Errs) > 0 {
+		return &failed
 	}
 	return nil
 }
