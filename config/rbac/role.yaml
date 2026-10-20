@@ -9,26 +9,14 @@ rules:
   resources:
   - endpointmonitors
   verbs:
-  - create
-  - delete
   - get
   - list
-  - patch
-  - update
   - watch
-- apiGroups:
-  - monitoring.licious.app
-  resources:
-  - endpointmonitors/finalizers
-  verbs:
-  - update
 - apiGroups:
   - monitoring.licious.app
   resources:
   - endpointmonitors/status
   verbs:
-  - get
-  - patch
   - update
 - apiGroups:
   - ""
@@ -36,8 +24,6 @@ rules:
   - secrets
   verbs:
   - get
-  - list
-  - watch
 - apiGroups:
   - events.k8s.io
   resources:

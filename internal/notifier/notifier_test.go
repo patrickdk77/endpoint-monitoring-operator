@@ -1,6 +1,15 @@
 package notifier
 
-import "testing"
+import (
+	"context"
+	"errors"
+	"testing"
+	"time"
+
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
+)
 
 func TestDisplayEndpoint(t *testing.T) {
 	tests := []struct{ in, want string }{
@@ -23,5 +32,30 @@ func TestDisplayEndpoint(t *testing.T) {
 		if got := DisplayEndpoint(tc.in); got != tc.want {
 			t.Errorf("DisplayEndpoint(%q) = %q, want %q", tc.in, got, tc.want)
 		}
+	}
+}
+
+func TestGetSecretGivesUpAfterTimeout(t *testing.T) {
+	old := Timeout
+	Timeout = 100 * time.Millisecond
+	t.Cleanup(func() { Timeout = old })
+	stalled := fake.NewClientBuilder().WithInterceptorFuncs(interceptor.Funcs{
+		Get: func(ctx context.Context, _ client.WithWatch, _ client.ObjectKey, _ client.Object, _ ...client.GetOption) error {
+			<-ctx.Done()
+			return ctx.Err()
+		},
+	}).Build()
+	done := make(chan error, 1)
+	go func() {
+		_, err := GetSecret("creds", "default", stalled)
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("err = %v, want a deadline", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("GetSecret is still waiting after 2s with a 100ms timeout")
 	}
 }

@@ -12,7 +12,7 @@ import (
 )
 
 // Timeout bounds each request the Slack, Discord, webhook, email and SES
-// notifiers make; valkey keeps its own deadlines.
+// notifiers make, and each Secret read; valkey keeps its own deadlines.
 var Timeout = 30 * time.Second
 
 type Notifier interface {
@@ -73,7 +73,9 @@ func GetSecret(name string, namespace string, client client.Client) (*corev1.Sec
 		Name:      name,
 	}
 	secret := &corev1.Secret{}
-	err := client.Get(context.TODO(), secretName, secret)
+	ctx, cancel := context.WithTimeout(context.Background(), Timeout)
+	defer cancel()
+	err := client.Get(ctx, secretName, secret)
 	if err != nil {
 		return nil, err
 	}
