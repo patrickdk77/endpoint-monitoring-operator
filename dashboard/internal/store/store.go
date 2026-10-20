@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/patrickdk77/endpoint-monitoring-operator/dashboard/internal/config"
@@ -594,6 +595,14 @@ func (s *Store) EnsureYesterdayDaily(ctx context.Context, dash, svc string) erro
 	return s.UpdateDailyRollup(ctx, dash, svc, y)
 }
 
+// FormatPercent renders a percentage with at most two decimal places and no
+// trailing zeros, so a whole value reads as "100%" rather than "100.00%".
+func FormatPercent(pct float64) string {
+	num := strings.TrimRight(fmt.Sprintf("%.2f", pct), "0")
+	num = strings.TrimRight(num, ".")
+	return num + "%"
+}
+
 // ComputeSLA computes the uptime percentage over the last `days` calendar
 // days (inclusive). Returns an empty string when there is no data.
 func (s *Store) ComputeSLA(ctx context.Context, dash, svc string, days int) (string, error) {
@@ -623,7 +632,7 @@ func (s *Store) ComputeSLA(ctx context.Context, dash, svc string, days int) (str
 		if total == 0 {
 			return "", nil
 		}
-		return fmt.Sprintf("%.2f%%", float64(success)/float64(total)*100), nil
+		return FormatPercent(float64(success) / float64(total) * 100), nil
 	}
 
 	// Fallback: compute from hourly aggregate rollups across the requested
@@ -646,7 +655,7 @@ func (s *Store) ComputeSLA(ctx context.Context, dash, svc string, days int) (str
 	if total == 0 {
 		return "", nil
 	}
-	return fmt.Sprintf("%.2f%%", float64(success)/float64(total)*100), nil
+	return FormatPercent(float64(success) / float64(total) * 100), nil
 }
 
 // UpdateSLAs computes 7/30/365 day SLAs and stores them as fields on the

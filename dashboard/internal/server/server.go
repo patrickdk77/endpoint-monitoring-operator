@@ -514,10 +514,7 @@ func (s *Server) sla(ctx context.Context, dash, svc string) string {
 	if total == 0 {
 		return ""
 	}
-	pct := float64(success) / float64(total) * 100
-	num := strings.TrimRight(fmt.Sprintf("%.2f", pct), "0")
-	num = strings.TrimRight(num, ".")
-	return num + "%"
+	return store.FormatPercent(float64(success) / float64(total) * 100)
 }
 
 type windowView struct {

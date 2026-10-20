@@ -6,6 +6,14 @@
 
   function formatPct(s){ return s === '' ? '-' : s }
 
+  // Round to `digits` decimals and drop any trailing zeros, so a whole value
+  // reads as '100' rather than '100.00'.
+  function trimNum(n, digits){
+    const s = n.toFixed(digits)
+    if(s.indexOf('.') < 0) return s
+    return s.replace(/0+$/, '').replace(/\.$/, '')
+  }
+
   function renderSLA(value){
     if(!value) return '—'
     const m = value.match(/^(\d+(?:\.\d+)?)%$/)
@@ -50,8 +58,7 @@
       if(total===0){
         out[w.label] = ''
       } else {
-        const pct = succ/total*100
-        out[w.label] = (Number.isInteger(pct) ? pct.toString() : pct.toFixed(2)) + '%'
+        out[w.label] = trimNum(succ/total*100, 2) + '%'
       }
     })
     return out
@@ -126,7 +133,7 @@
       const y = padding.top + plotH - (plotH/(ticks-1))*i
       const value = minY + (maxY-minY)/(ticks-1)*i
       ctx.beginPath(); ctx.moveTo(padding.left, y); ctx.lineTo(w-padding.right, y); ctx.stroke()
-      const label = Math.round(value) === value ? value.toString() : value.toFixed(1)
+      const label = trimNum(value, 1)
       ctx.fillText(label + ' ms', 4, y + 4)
     }
 
@@ -266,7 +273,7 @@
           html += '<table>'
           for(const k of keys){
             const v = stats[k]
-            html += '<tr><td>'+k+'</td><td>'+(v.avg? v.avg.toFixed(1):'-')+'</td><td>'+(v.min? v.min.toFixed(1):'-')+'</td><td>'+(v.max? v.max.toFixed(1):'-')+'</td></tr>'
+            html += '<tr><td>'+k+'</td><td>'+(v.avg? trimNum(v.avg,1):'-')+'</td><td>'+(v.min? trimNum(v.min,1):'-')+'</td><td>'+(v.max? trimNum(v.max,1):'-')+'</td></tr>'
           }
           html += '</table>'
         }
