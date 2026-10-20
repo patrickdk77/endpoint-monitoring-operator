@@ -2,11 +2,16 @@ package notifier
 
 import (
 	"context"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
+
+// Timeout bounds each request the Slack, Discord, webhook, email and SES
+// notifiers make; valkey keeps its own deadlines.
+var Timeout = 30 * time.Second
 
 type Notifier interface {
 	SendAlert(status string, values *NoticeValues, client client.Client) error

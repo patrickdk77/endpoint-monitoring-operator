@@ -42,7 +42,7 @@ func (d *DiscordNotifier) SendAlert(status string, values *notifier.NoticeValues
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", version.UserAgent)
-	httpClient := &http.Client{}
+	httpClient := &http.Client{Timeout: notifier.Timeout}
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send discord alert: %w", err)

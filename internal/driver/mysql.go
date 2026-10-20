@@ -1,6 +1,7 @@
 package driver
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"net"
@@ -52,6 +53,8 @@ func NewMYSQLDriver(endpoint, family string, check *v1.MysqlCheck, namespace str
 
 func (m *MYSQLDriver) Check() (*CheckResult, error) {
 	start := time.Now()
+	ctx, cancel := context.WithTimeout(context.Background(), checkTimeout)
+	defer cancel()
 
 	hostPart, port, errSplit := net.SplitHostPort(m.endpoint)
 	if errSplit != nil {
@@ -60,7 +63,7 @@ func (m *MYSQLDriver) Check() (*CheckResult, error) {
 	}
 	host := net.JoinHostPort(hostPart, port)
 
-	dsn := fmt.Sprintf("%s:%s@%s(%s)/", m.username, m.password, familyNetwork("tcp", m.family), host)
+	dsn := fmt.Sprintf("%s:%s@%s(%s)/?timeout=%s&readTimeout=%s&writeTimeout=%s", m.username, m.password, familyNetwork("tcp", m.family), host, checkTimeout, checkTimeout, checkTimeout)
 	db, err := sql.Open("mysql", dsn)
 	if err != nil {
 		return &CheckResult{
@@ -76,7 +79,7 @@ func (m *MYSQLDriver) Check() (*CheckResult, error) {
 	}
 
 	// Test connection
-	if err := db.Ping(); err != nil {
+	if err := db.PingContext(ctx); err != nil {
 		err = fmt.Errorf("failed to ping: %v", err)
 	}
 
@@ -84,7 +87,7 @@ func (m *MYSQLDriver) Check() (*CheckResult, error) {
 	var maxUsedConnections, maxConnections int
 
 	var varName, varValue string
-	err = db.QueryRow("SHOW GLOBAL STATUS LIKE 'Max_used_connections'").Scan(&varName, &varValue)
+	err = db.QueryRowContext(ctx, "SHOW GLOBAL STATUS LIKE 'Max_used_connections'").Scan(&varName, &varValue)
 	if err != nil {
 		err = fmt.Errorf("failed to get max_used_connections: %v", err)
 	} else {
@@ -92,7 +95,7 @@ func (m *MYSQLDriver) Check() (*CheckResult, error) {
 	}
 
 	if err == nil {
-		err = db.QueryRow("SHOW GLOBAL VARIABLES LIKE 'max_connections'").Scan(&varName, &varValue)
+		err = db.QueryRowContext(ctx, "SHOW GLOBAL VARIABLES LIKE 'max_connections'").Scan(&varName, &varValue)
 		if err != nil {
 			err = fmt.Errorf("failed to get max_connections: %v", err)
 		} else {
@@ -109,7 +112,7 @@ func (m *MYSQLDriver) Check() (*CheckResult, error) {
 
 	if err == nil {
 		var readOnlyValue string
-		err = db.QueryRow("SHOW GLOBAL VARIABLES LIKE 'read_only'").Scan(&varName, &readOnlyValue)
+		err = db.QueryRowContext(ctx, "SHOW GLOBAL VARIABLES LIKE 'read_only'").Scan(&varName, &readOnlyValue)
 		if err != nil {
 			err = fmt.Errorf("failed to get read_only variable: %v", err)
 		} else {
@@ -126,7 +129,7 @@ func (m *MYSQLDriver) Check() (*CheckResult, error) {
 
 	// Check Slave Status if MaxSecondsBehindMaster is defined
 	if err == nil && m.check != nil && m.check.MaxSecondsBehindMaster != nil {
-		rows, err := db.Query("SHOW SLAVE STATUS")
+		rows, err := db.QueryContext(ctx, "SHOW SLAVE STATUS")
 		if err != nil {
 			err = fmt.Errorf("failed to query slave status: %v", err)
 		} else {

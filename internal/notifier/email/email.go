@@ -3,7 +3,9 @@ package email
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"net"
 	"net/smtp"
@@ -153,11 +155,12 @@ func (e *EmailNotifier) SendSMTP(subject string, msg string, values *notifier.No
 			"Subject: " + escapeUTF8(subject) + "\r\n\r\n" +
 			strings.ReplaceAll(msg, "\n", "\r\n") + "\r\n")
 
-	return smtp.SendMail(host, auth, from, e.cfg.To, body)
+	return sendMail(host, auth, from, e.cfg.To, body)
 }
 
 func (e *EmailNotifier) SendSES(subject string, msg string, values *notifier.NoticeValues) error {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), notifier.Timeout)
+	defer cancel()
 	sdkcfg, err := config.LoadDefaultConfig(ctx)
 	if err != nil {
 		return err
@@ -204,4 +207,79 @@ func escapeUTF8(s string) string {
 		}
 	}
 	return s
+}
+
+// sendMail is smtp.SendMail with one deadline for the dial and the whole
+// conversation. Unlike smtp.SendMail, it refuses to send when credentials
+// are set and the server offers no AUTH.
+func sendMail(addr string, a smtp.Auth, from string, to []string, msg []byte) error {
+	if err := validateLine(from); err != nil {
+		return err
+	}
+	for _, recp := range to {
+		if err := validateLine(recp); err != nil {
+			return err
+		}
+	}
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return err
+	}
+	deadline := time.Now().Add(notifier.Timeout)
+	dialer := net.Dialer{Deadline: deadline}
+	conn, err := dialer.Dial("tcp", addr)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	if err := conn.SetDeadline(deadline); err != nil {
+		return err
+	}
+	c, err := smtp.NewClient(conn, host)
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+	if err = c.Hello("localhost"); err != nil {
+		return err
+	}
+	if ok, _ := c.Extension("STARTTLS"); ok {
+		if err = c.StartTLS(&tls.Config{ServerName: host}); err != nil {
+			return err
+		}
+	}
+	if a != nil {
+		if ok, _ := c.Extension("AUTH"); !ok {
+			return errors.New("smtp: server doesn't support AUTH")
+		}
+		if err = c.Auth(a); err != nil {
+			return err
+		}
+	}
+	if err = c.Mail(from); err != nil {
+		return err
+	}
+	for _, addr := range to {
+		if err = c.Rcpt(addr); err != nil {
+			return err
+		}
+	}
+	w, err := c.Data()
+	if err != nil {
+		return err
+	}
+	if _, err = w.Write(msg); err != nil {
+		return err
+	}
+	if err = w.Close(); err != nil {
+		return err
+	}
+	return c.Quit()
+}
+
+func validateLine(line string) error {
+	if strings.ContainsAny(line, "\n\r") {
+		return errors.New("smtp: A line must not contain CR or LF")
+	}
+	return nil
 }

@@ -79,7 +79,7 @@ func (w *WebhookNotifier) SendAlert(status string, values *notifier.NoticeValues
 		}
 	}
 
-	httpClient := &http.Client{}
+	httpClient := &http.Client{Timeout: notifier.Timeout}
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("WEBHOOK: failed to make http webhook request: %w", err)

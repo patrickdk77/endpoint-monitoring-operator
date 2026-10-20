@@ -90,6 +90,9 @@ func (t *SMTPDriver) Check() (*CheckResult, error) {
 	}
 
 	if err == nil {
+		err = conn.SetDeadline(time.Now().Add(checkTimeout))
+	}
+	if err == nil {
 		sconn, err = smtp.NewClient(conn, host)
 	}
 	if err == nil && t.check.Helo != "" {
