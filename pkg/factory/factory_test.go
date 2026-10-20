@@ -2,6 +2,7 @@ package factory
 
 import (
 	"errors"
+	"fmt"
 	"net"
 	"os"
 	"reflect"
@@ -34,11 +35,11 @@ func tcpListener(t *testing.T) string {
 	return ln.Addr().String()
 }
 
-func monitor(driverType, endpoint, family string) *v1alpha1.EndpointMonitor {
+func monitor(driverType, endpoint string, families ...string) *v1alpha1.EndpointMonitor {
 	return &v1alpha1.EndpointMonitor{Spec: v1alpha1.EndpointMonitorSpec{
 		Driver:        driverType,
 		Endpoint:      endpoint,
-		IpFamily:      family,
+		IpFamily:      families,
 		TlsCheck:      &v1alpha1.TlsCheck{},
 		HttpJsonCheck: &v1alpha1.HttpJsonCheck{},
 		SmtpCheck:     &v1alpha1.SmtpCheck{},
@@ -50,17 +51,18 @@ func monitor(driverType, endpoint, family string) *v1alpha1.EndpointMonitor {
 func TestCreateDriverPassesFamily(t *testing.T) {
 	endpoint := tcpListener(t)
 	tests := []struct {
-		family  string
-		success bool
-		inMsg   string
+		families []string
+		success  bool
+		inMsg    string
 	}{
-		{"", true, "TCP check successful"},
-		{"ipv4", true, "TCP check successful"},
-		{"ipv6", false, "no suitable address"},
+		{nil, true, "TCP check successful"},
+		{[]string{}, true, "TCP check successful"},
+		{[]string{"ipv4"}, true, "TCP check successful"},
+		{[]string{"ipv6"}, false, "no suitable address"},
 	}
 	for _, tc := range tests {
-		t.Run(tc.family, func(t *testing.T) {
-			m := monitor("tcp", endpoint, tc.family)
+		t.Run(fmt.Sprint(tc.families), func(t *testing.T) {
+			m := monitor("tcp", endpoint, tc.families...)
 			d, err := NewDriver(m.Spec.Driver, m.Spec.Endpoint, m, "default", nil)
 			if err != nil {
 				t.Fatal(err)
@@ -77,7 +79,7 @@ func TestCreateDriverPassesFamily(t *testing.T) {
 }
 
 func TestCreateDriverAllChecksBothFamilies(t *testing.T) {
-	m := monitor("tcp", tcpListener(t), "all")
+	m := monitor("tcp", tcpListener(t), "ipv6", "ipv4")
 	d, err := NewDriver(m.Spec.Driver, m.Spec.Endpoint, m, "default", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -104,14 +106,14 @@ var testEndpoints = map[string]string{
 
 func TestCreateDriverEveryTypeEveryFamily(t *testing.T) {
 	for driverType, endpoint := range testEndpoints {
-		for _, family := range []string{"", "ipv4", "ipv6", "all"} {
-			m := monitor(driverType, endpoint, family)
+		for _, families := range [][]string{nil, {"ipv4"}, {"ipv6"}, {"ipv4", "ipv6"}} {
+			m := monitor(driverType, endpoint, families...)
 			d, err := NewDriver(driverType, endpoint, m, "default", nil)
 			if err != nil {
-				t.Fatalf("%s/%q: %v", driverType, family, err)
+				t.Fatalf("%s/%q: %v", driverType, families, err)
 			}
 			if d.GetType() != driverType {
-				t.Fatalf("%s/%q: type %s", driverType, family, d.GetType())
+				t.Fatalf("%s/%q: type %s", driverType, families, d.GetType())
 			}
 		}
 	}
@@ -138,7 +140,7 @@ func TestCreateDriverWiresFamilyForEveryType(t *testing.T) {
 				t.Fatalf("ipv6 reached an IPv4 literal: success=%v %s", res.Success, res.Message)
 			}
 
-			m.Spec.IpFamily = "all"
+			m.Spec.IpFamily = []string{"ipv4", "ipv6"}
 			d, err = NewDriver(driverType, endpoint, m, "default", nil)
 			if err != nil {
 				t.Fatal(err)
@@ -254,7 +256,7 @@ func TestCRDDriverEnumMatchesFactory(t *testing.T) {
 			continue
 		}
 		delete(tested, driverType)
-		m := monitor(driverType, testEndpoints[driverType], "")
+		m := monitor(driverType, testEndpoints[driverType])
 		if _, err := NewDriver(driverType, testEndpoints[driverType], m, "default", nil); err != nil {
 			t.Errorf("driver %q is in the CRD enum but the factory rejects it: %v", driverType, err)
 		}
@@ -266,21 +268,25 @@ func TestCRDDriverEnumMatchesFactory(t *testing.T) {
 
 func TestCreateDriverRejectsBadInput(t *testing.T) {
 	tests := []struct {
-		name, driverType, family, wantErr string
+		name, driverType string
+		families         []string
+		wantErr          string
 	}{
-		{"unknown family", "tcp", "ipv5", "unsupported ipFamily: ipv5"},
-		{"family is case sensitive", "tcp", "IPv4", "unsupported ipFamily: IPv4"},
-		{"unknown driver", "bogus", "", "unsupported driver type: bogus"},
-		{"unknown driver with all", "bogus", "all", "unsupported driver type: bogus"},
-		{"empty endpoint with all", "tcp", "all", "endpoint cannot be empty"},
+		{"unknown family", "tcp", []string{"ipv5"}, "unsupported ipFamily: ipv5"},
+		{"family is case sensitive", "tcp", []string{"IPv4"}, "unsupported ipFamily: IPv4"},
+		{"the old all", "tcp", []string{"all"}, "unsupported ipFamily: all"},
+		{"unknown family next to a known one", "tcp", []string{"ipv4", "ipv5"}, "unsupported ipFamily: ipv5"},
+		{"unknown driver", "bogus", nil, "unsupported driver type: bogus"},
+		{"unknown driver with both families", "bogus", []string{"ipv4", "ipv6"}, "unsupported driver type: bogus"},
+		{"empty endpoint with both families", "tcp", []string{"ipv4", "ipv6"}, "endpoint cannot be empty"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			endpoint := "127.0.0.1:1"
-			if tc.name == "empty endpoint with all" {
+			if tc.name == "empty endpoint with both families" {
 				endpoint = ""
 			}
-			m := monitor(tc.driverType, endpoint, tc.family)
+			m := monitor(tc.driverType, endpoint, tc.families...)
 			_, err := NewDriver(tc.driverType, endpoint, m, "default", nil)
 			if err == nil || err.Error() != tc.wantErr {
 				t.Fatalf("err=%v, want %q", err, tc.wantErr)

@@ -128,10 +128,19 @@ func NewDriver(driverType string, endpoint string, monitor *v1alpha1.EndpointMon
 
 // CreateDriver implements the factory pattern for drivers
 func (f *DriverFactory) CreateDriver(driverType string, endpoint string, monitor *v1alpha1.EndpointMonitor, namespace string, client client.Client) (driver.Driver, error) {
-	switch monitor.Spec.IpFamily {
-	case "", driver.FamilyIPv4, driver.FamilyIPv6:
-		return f.createFamilyDriver(driverType, endpoint, monitor.Spec.IpFamily, monitor, namespace, client)
-	case driver.FamilyAll:
+	var ipv4, ipv6 bool
+	for _, family := range monitor.Spec.IpFamily {
+		switch family {
+		case driver.FamilyIPv4:
+			ipv4 = true
+		case driver.FamilyIPv6:
+			ipv6 = true
+		default:
+			return nil, fmt.Errorf("unsupported ipFamily: %s", family)
+		}
+	}
+	switch {
+	case ipv4 && ipv6:
 		v4, err := f.createFamilyDriver(driverType, endpoint, driver.FamilyIPv4, monitor, namespace, client)
 		if err != nil {
 			return nil, err
@@ -141,8 +150,12 @@ func (f *DriverFactory) CreateDriver(driverType string, endpoint string, monitor
 			return nil, err
 		}
 		return driver.NewBothFamiliesDriver(v4, v6), nil
+	case ipv4:
+		return f.createFamilyDriver(driverType, endpoint, driver.FamilyIPv4, monitor, namespace, client)
+	case ipv6:
+		return f.createFamilyDriver(driverType, endpoint, driver.FamilyIPv6, monitor, namespace, client)
 	default:
-		return nil, fmt.Errorf("unsupported ipFamily: %s", monitor.Spec.IpFamily)
+		return f.createFamilyDriver(driverType, endpoint, "", monitor, namespace, client)
 	}
 }
 

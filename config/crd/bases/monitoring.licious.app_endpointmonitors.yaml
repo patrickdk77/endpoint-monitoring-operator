@@ -94,17 +94,24 @@ spec:
                 type: object
               ipFamily:
                 description: |-
-                  IpFamily set to ipv4 or ipv6 connects to the endpoint over that address
-                  family only. A pinned family connects directly, ignoring HTTP proxy
-                  settings, and redirects stay on that family. all runs each check over
-                  both families, fails if either fails, and reports the slower response
-                  time. Omit the field to leave the choice to the system. For the dns
-                  driver it applies to the connection to the DNS server.
-                enum:
-                - ipv4
-                - ipv6
-                - all
-                type: string
+                  IpFamily lists the address families to connect to the endpoint over.
+                  With ipv4 or ipv6 alone, every connection uses that family, connects
+                  directly, ignoring HTTP proxy settings, and redirects stay on that
+                  family. With both, each check runs over each family, fails if either
+                  fails, and reports the slower response time. Omit the field or leave
+                  it empty to leave the choice to the system. For the dns driver it
+                  applies to the connection to the DNS server.
+                items:
+                  enum:
+                  - ipv4
+                  - ipv6
+                  type: string
+                maxItems: 2
+                type: array
+                x-kubernetes-list-type: atomic
+                x-kubernetes-validations:
+                - message: must not list a family twice
+                  rule: self.all(f, self.exists_one(g, g == f))
               mysqlCheck:
                 properties:
                   maxSecondsBehindMaster:

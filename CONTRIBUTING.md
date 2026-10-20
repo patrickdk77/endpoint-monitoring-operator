@@ -43,7 +43,7 @@ type Driver interface {
 
 Have the constructor take the monitor's address family (`""`, `ipv4` or `ipv6`) and open every connection to the endpoint through `familyNetwork` or `httpClient` in `internal/driver/family.go`, so `spec.ipFamily` applies to the new driver.
 
-Add your driver to `createFamilyDriver` in `pkg/factory/factory.go`. When `ipFamily` is `all`, the factory builds it once per family.
+Add your driver to `createFamilyDriver` in `pkg/factory/factory.go`. When `ipFamily` lists both `ipv4` and `ipv6`, the factory builds it once per family.
 
 Add the driver's name to the `Enum` marker on `EndpointMonitorSpec.Driver` in `api/v1alpha1/endpointmonitor_types.go` and run `make manifests`. The API server rejects any driver name missing from that list.
 

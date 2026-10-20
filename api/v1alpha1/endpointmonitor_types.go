@@ -1,6 +1,8 @@
 package v1alpha1
 
 import (
+	"encoding/json"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -67,15 +69,44 @@ type EndpointMonitorSpec struct {
 	TlsCheck      *TlsCheck      `json:"tlsCheck,omitempty"`      // only relevant for driver = "tls", "http"
 	DnsCheck      *DnsCheck      `json:"dnsCheck,omitempty"`      // only relevant for driver = "dns"
 	MysqlCheck    *MysqlCheck    `json:"mysqlCheck,omitempty"`    // only relevant for driver = "mysql", "mariadb"
-	// IpFamily set to ipv4 or ipv6 connects to the endpoint over that address
-	// family only. A pinned family connects directly, ignoring HTTP proxy
-	// settings, and redirects stay on that family. all runs each check over
-	// both families, fails if either fails, and reports the slower response
-	// time. Omit the field to leave the choice to the system. For the dns
-	// driver it applies to the connection to the DNS server.
-	// +kubebuilder:validation:Enum=ipv4;ipv6;all
+	// IpFamily lists the address families to connect to the endpoint over.
+	// With ipv4 or ipv6 alone, every connection uses that family, connects
+	// directly, ignoring HTTP proxy settings, and redirects stay on that
+	// family. With both, each check runs over each family, fails if either
+	// fails, and reports the slower response time. Omit the field or leave
+	// it empty to leave the choice to the system. For the dns driver it
+	// applies to the connection to the DNS server.
 	// +optional
-	IpFamily string `json:"ipFamily,omitempty"`
+	IpFamily IpFamilies `json:"ipFamily,omitempty"`
+}
+
+// +kubebuilder:validation:Type=array
+// +kubebuilder:validation:items:Type=string
+// +kubebuilder:validation:items:Enum=ipv4;ipv6
+// +kubebuilder:validation:MaxItems=2
+// +kubebuilder:validation:XValidation:rule="self.all(f, self.exists_one(g, g == f))",message="must not list a family twice"
+// +listType=atomic
+type IpFamilies []string
+
+func (f *IpFamilies) UnmarshalJSON(data []byte) error {
+	var list []string
+	if err := json.Unmarshal(data, &list); err == nil {
+		*f = list
+		return nil
+	}
+	var single string
+	if err := json.Unmarshal(data, &single); err != nil {
+		return err
+	}
+	switch single {
+	case "":
+		*f = nil
+	case "all":
+		*f = IpFamilies{"ipv4", "ipv6"}
+	default:
+		*f = IpFamilies{single}
+	}
+	return nil
 }
 
 // NotifyConfig holds notifier configurations

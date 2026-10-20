@@ -14,7 +14,6 @@ import (
 const (
 	FamilyIPv4 = "ipv4"
 	FamilyIPv6 = "ipv6"
-	FamilyAll  = "all"
 )
 
 // familyNetwork narrows a "tcp" or "udp" network to the address family
