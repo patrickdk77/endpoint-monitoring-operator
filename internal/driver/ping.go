@@ -23,7 +23,8 @@ func (p *PingDriver) Check() (*CheckResult, error) {
 	start := time.Now()
 
 	// Simple connectivity check
-	conn, err := net.DialTimeout(familyNetwork("tcp", p.family), p.endpoint+":80", 5*time.Second)
+	host, port := hostPort(p.endpoint, "80")
+	conn, err := net.DialTimeout(familyNetwork("tcp", p.family), net.JoinHostPort(host, port), 5*time.Second)
 	duration := time.Since(start)
 
 	result := &CheckResult{

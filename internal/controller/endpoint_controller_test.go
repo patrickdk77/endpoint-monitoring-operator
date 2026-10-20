@@ -17,6 +17,7 @@ limitations under the License.
 package controller
 
 import (
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -241,7 +242,46 @@ var _ = Describe("EndpointMonitor Controller", func() {
 			Entry("an unknown webhook alertOn", "webhook-alerton", "spec.notify.webhook.alertOn", func(s *Endpointmonitoringv1alpha1.EndpointMonitorSpec) {
 				s.Notify.Webhook = &Endpointmonitoringv1alpha1.WebhookConfig{AlertOn: []string{""}}
 			}),
+			Entry("an expectedStatusCode below 100", "status-99", "spec.httpJsonCheck.expectedStatusCode", func(s *Endpointmonitoringv1alpha1.EndpointMonitorSpec) {
+				s.HttpJsonCheck = &Endpointmonitoringv1alpha1.HttpJsonCheck{ExpectedStatusCode: 99, JsonAssertions: map[string]string{"status": "UP"}}
+			}),
+			Entry("an expectedStatusCode above 599", "status-600", "spec.httpJsonCheck.expectedStatusCode", func(s *Endpointmonitoringv1alpha1.EndpointMonitorSpec) {
+				s.HttpJsonCheck = &Endpointmonitoringv1alpha1.HttpJsonCheck{ExpectedStatusCode: 600, JsonAssertions: map[string]string{"status": "UP"}}
+			}),
+			Entry("a negative expectedStatusCode", "status-negative", "spec.httpJsonCheck.expectedStatusCode", func(s *Endpointmonitoringv1alpha1.EndpointMonitorSpec) {
+				s.HttpJsonCheck = &Endpointmonitoringv1alpha1.HttpJsonCheck{ExpectedStatusCode: -1, JsonAssertions: map[string]string{"status": "UP"}}
+			}),
 		)
+
+		It("accepts expectedStatusCode 0 and 100 to 599", func() {
+			for _, code := range []int{0, 100, 302, 599} {
+				spec := validSpec()
+				spec.Driver = "http-json"
+				spec.HttpJsonCheck = &Endpointmonitoringv1alpha1.HttpJsonCheck{ExpectedStatusCode: code, JsonAssertions: map[string]string{"status": "UP"}}
+				create(fmt.Sprintf("status-%d", code), spec)
+			}
+		})
+
+		It("accepts an explicit expectedStatusCode 0, as kubectl apply sends it", func() {
+			u := &unstructured.Unstructured{Object: map[string]any{
+				"spec": map[string]any{
+					"driver":        "http-json",
+					"endpoint":      "http://127.0.0.1:1/",
+					"checkInterval": int64(60),
+					"notify":        map[string]any{},
+					"httpJsonCheck": map[string]any{
+						"expectedStatusCode": int64(0),
+						"jsonAssertions":     map[string]any{"status": "UP"},
+					},
+				},
+			}}
+			u.SetAPIVersion("monitoring.licious.app/v1alpha1")
+			u.SetKind("EndpointMonitor")
+			u.SetName("status-explicit-0")
+			u.SetNamespace("default")
+			Expect(k8sClient.Create(ctx, u)).To(Succeed())
+			DeferCleanup(func() { Expect(k8sClient.Delete(ctx, u)).To(Succeed()) })
+		})
 
 		It("rejects a monitor without a spec", func() {
 			for name, body := range map[string]map[string]any{

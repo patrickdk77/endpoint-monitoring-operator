@@ -6,13 +6,14 @@ import (
 
 // HttpJsonCheck defines expected JSON field values from a HTTP response
 type HttpJsonCheck struct {
+	// +kubebuilder:validation:XValidation:rule="self == 0 || (self >= 100 && self <= 599)",message="must be an HTTP status code from 100 to 599"
 	ExpectedStatusCode int               `json:"expectedStatusCode,omitempty"` // optional override for status code check
 	JsonAssertions     map[string]string `json:"jsonAssertions"`               // key: JSONPath-like dot string, value: expected value
 }
 
 // HttpCheck defines expected values from a HTTP response
 type HttpCheck struct {
-	BodyContains string `json:"bodyContains,omitempty"` // optional string to match in body
+	BodyContains string `json:"bodyContains,omitempty"` // optional string to match in the first 1 MiB of the body
 }
 
 type SmtpCheck struct {

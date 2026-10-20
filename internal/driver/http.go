@@ -1,8 +1,8 @@
 package driver
 
 import (
+	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -72,16 +72,20 @@ func (h *HTTPDriver) Check() (*CheckResult, error) {
 
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		if h.httpCheck != nil && h.httpCheck.BodyContains != "" {
-			bodyBytes, err := io.ReadAll(resp.Body)
-			if err != nil {
+			bodyBytes, err := readBody(resp.Body)
+			if err != nil && !errors.Is(err, errBodyTooLarge) {
 				result.Success = false
 				result.Error = err
 				result.Message = fmt.Sprintf("HTTP check failed to read body: %v", err)
 				return result, nil
 			}
 			if !strings.Contains(string(bodyBytes), h.httpCheck.BodyContains) {
+				where := "body"
+				if err != nil {
+					where = "the first 1 MiB of the body"
+				}
 				result.Success = false
-				result.Message = fmt.Sprintf("HTTP check failed: body does not contain '%s' (status: %d, response time: %v)", h.httpCheck.BodyContains, resp.StatusCode, duration)
+				result.Message = fmt.Sprintf("HTTP check failed: %s does not contain '%s' (status: %d)", where, h.httpCheck.BodyContains, resp.StatusCode)
 				return result, nil
 			}
 		}
@@ -90,7 +94,7 @@ func (h *HTTPDriver) Check() (*CheckResult, error) {
 		result.Message = fmt.Sprintf("HTTP check successful (status: %d, response time: %v)", resp.StatusCode, duration)
 	} else {
 		result.Success = false
-		result.Message = fmt.Sprintf("HTTP check failed (status: %d, response time: %v)", resp.StatusCode, duration)
+		result.Message = fmt.Sprintf("HTTP check failed (status: %d)", resp.StatusCode)
 	}
 
 	return result, nil

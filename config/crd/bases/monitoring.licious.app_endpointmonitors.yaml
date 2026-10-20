@@ -81,6 +81,9 @@ spec:
                 properties:
                   expectedStatusCode:
                     type: integer
+                    x-kubernetes-validations:
+                    - message: must be an HTTP status code from 100 to 599
+                      rule: self == 0 || (self >= 100 && self <= 599)
                   jsonAssertions:
                     additionalProperties:
                       type: string
