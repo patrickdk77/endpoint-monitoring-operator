@@ -4,64 +4,12 @@
     return fetch('/api/dashboard/'+encodeURIComponent(dash)+'/'+encodeURIComponent(svc)).then(r=>r.json())
   }
 
-  function formatPct(s){ return s === '' ? '-' : s }
-
   // Round to `digits` decimals and drop any trailing zeros, so a whole value
   // reads as '100' rather than '100.00'.
   function trimNum(n, digits){
     const s = n.toFixed(digits)
     if(s.indexOf('.') < 0) return s
     return s.replace(/0+$/, '').replace(/\.$/, '')
-  }
-
-  function renderSLA(value){
-    if(!value) return '—'
-    const m = value.match(/^(\d+(?:\.\d+)?)%$/)
-    if(m) return '<span class="sla-num">'+m[1]+'</span><span class="sla-percent">%</span>'
-    return value
-  }
-
-  function slaClass(value){
-    const m = value && value.match(/^(\d+(?:\.\d+)?)%$/)
-    if(!m) return ''
-    const n = parseFloat(m[1])
-    if(n >= 99.9) return 'sla-good'
-    if(n >= 99.5) return 'sla-warning'
-    return 'sla-danger'
-  }
-
-  function setSLA(el, value){
-    el.innerHTML = renderSLA(value)
-    el.classList.remove('sla-good', 'sla-warning', 'sla-danger')
-    const cls = slaClass(value)
-    if(cls) el.classList.add(cls)
-  }
-
-  function computeSLAs(rollups){
-    const now = new Date()
-    const msPerDay = 24*3600*1000
-    const windows = [{label:'7d', days:7},{label:'30d', days:30},{label:'365d', days:365}]
-    const out = {}
-    // transform rollups map into array of {t, success, failure}
-    const hrs = Object.keys(rollups).map(k=>({t: parseInt(k,10)*1000, r: rollups[k]})).sort((a,b)=>a.t-b.t)
-    windows.forEach(w=>{
-      const from = new Date(now.getTime() - (w.days-1)*msPerDay)
-      let succ=0, fail=0
-      for(const h of hrs){
-        const t = new Date(h.t)
-        if(t>=from && t<=now){
-          succ += h.r.success || 0
-          fail += h.r.failure || 0
-        }
-      }
-      const total = succ+fail
-      if(total===0){
-        out[w.label] = ''
-      } else {
-        out[w.label] = trimNum(succ/total*100, 2) + '%'
-      }
-    })
-    return out
   }
 
   function buildLocations(rollups){
@@ -211,26 +159,11 @@
     const dash = document.body.dataset.dash
     const svc = document.body.dataset.service
     if(!dash || !svc) return
-    const sla7El = $('sla7'), sla30El = $('sla30'), sla365El = $('sla365')
     const locSel = $('location-select')
     const canvas = $('rt-chart')
     const statsEl = $('rt-stats')
-    const rangeBtns = document.querySelectorAll('#range-buttons button')
-
-    function renderSLA(value){
-      if(!value) return '—'
-      const m = value.match(/^(\d+(?:\.\d+)?)%$/)
-      if(m) return '<span class="sla-num">'+m[1]+'</span><span class="sla-percent">%</span>'
-      return value
-    }
-
     fetchData(dash, svc).then(data=>{
       const rollups = data.rollups || {}
-      // populate SLAs
-      const slas = computeSLAs(rollups)
-      setSLA(sla7El, slas['7d'])
-      setSLA(sla30El, slas['30d'])
-      setSLA(sla365El, slas['365d'])
 
       // populate locations
       const locs = buildLocations(rollups)

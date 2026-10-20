@@ -22,18 +22,18 @@ func New(s *store.Store, interval, pace time.Duration, retentionDays int) *Runne
 func (r *Runner) Start(ctx context.Context) {
 	// Fill any historical gaps in the background so the live periodic rollup
 	// below is never blocked waiting on a long backfill.
-	go r.backfill(ctx)
+	go r.backfill(ctx, time.Now().UTC())
 
 	ticker := time.NewTicker(r.interval)
 	defer ticker.Stop()
 
-	r.runOnce(ctx)
+	r.runOnce(ctx, time.Now().UTC())
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			r.runOnce(ctx)
+			r.runOnce(ctx, time.Now().UTC())
 		}
 	}
 }
@@ -44,6 +44,7 @@ type svcRef struct {
 	dash     string
 	svc      string
 	existing map[int64]struct{}
+	touched  map[int64]struct{}
 }
 
 // backfill scans the full retention window and computes any hour that is
@@ -52,14 +53,14 @@ type svcRef struct {
 // further back, and so on) so recent history fills in across all monitors
 // before older history. It paces itself by sleeping between each gap hour it
 // processes so it does not hammer the source locations on startup.
-func (r *Runner) backfill(ctx context.Context) {
+func (r *Runner) backfill(ctx context.Context, at time.Time) {
 	dashboards, err := r.store.ListDashboards(ctx)
 	if err != nil {
 		log.Printf("rollup: backfill list dashboards: %v", err)
 		return
 	}
 
-	now := time.Now().UTC().Truncate(time.Hour)
+	now := at.Truncate(time.Hour)
 
 	var refs []svcRef
 	oldest := now.Add(-time.Duration(r.hours-1) * time.Hour)
@@ -79,7 +80,7 @@ func (r *Runner) backfill(ctx context.Context) {
 			for epoch := range rollups {
 				existing[epoch] = struct{}{}
 			}
-			refs = append(refs, svcRef{dash: dash, svc: svc, existing: existing})
+			refs = append(refs, svcRef{dash: dash, svc: svc, existing: existing, touched: map[int64]struct{}{}})
 		}
 	}
 
@@ -96,6 +97,7 @@ func (r *Runner) backfill(ctx context.Context) {
 			}
 			if r.rollupServiceHour(ctx, ref.dash, ref.svc, hour) {
 				filled++
+				ref.touched[hour.Truncate(24*time.Hour).Unix()] = struct{}{}
 			}
 			select {
 			case <-ctx.Done():
@@ -104,17 +106,49 @@ func (r *Runner) backfill(ctx context.Context) {
 			}
 		}
 	}
-	log.Printf("rollup: backfill complete, filled %d gap hour(s)", filled)
+
+	// Rebuild the daily rollup of every finished day whose hours backfill
+	// wrote, and of every finished day fully inside the window that has none.
+	today := at.Truncate(24 * time.Hour)
+	firstFull := oldest.Truncate(24 * time.Hour)
+	if firstFull.Before(oldest) {
+		firstFull = firstFull.AddDate(0, 0, 1)
+	}
+	days := 0
+	for _, ref := range refs {
+		dailies, err := r.store.GetDailyRollups(ctx, ref.dash, ref.svc, firstFull, today.AddDate(0, 0, -1))
+		if err != nil {
+			log.Printf("rollup: backfill read daily rollups %s/%s: %v", ref.dash, ref.svc, err)
+			continue
+		}
+		for day := firstFull; day.Before(today); day = day.AddDate(0, 0, 1) {
+			_, touched := ref.touched[day.Unix()]
+			if _, ok := dailies[day.Format("2006-01-02")]; ok && !touched {
+				continue
+			}
+			if ctx.Err() != nil {
+				return
+			}
+			r.updateDaily(ctx, ref.dash, ref.svc, day)
+			days++
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(r.pace):
+			}
+		}
+	}
+	log.Printf("rollup: backfill complete, filled %d gap hour(s), rebuilt %d daily rollup(s)", filled, days)
 }
 
-func (r *Runner) runOnce(ctx context.Context) {
+func (r *Runner) runOnce(ctx context.Context, now time.Time) {
 	dashboards, err := r.store.ListDashboards(ctx)
 	if err != nil {
 		log.Printf("rollup: list dashboards: %v", err)
 		return
 	}
 
-	now := time.Now().UTC()
+	today := now.Truncate(24 * time.Hour)
 	hours := []time.Time{
 		now.Truncate(time.Hour),
 		now.Truncate(time.Hour).Add(-time.Hour),
@@ -129,16 +163,17 @@ func (r *Runner) runOnce(ctx context.Context) {
 		for _, svc := range services {
 			for _, hour := range hours {
 				r.rollupServiceHour(ctx, dash, svc, hour)
-			}
-
-			// Ensure the previous day's daily rollup exists, then update SLA summaries.
-			if err := r.store.EnsureYesterdayDaily(ctx, dash, svc); err != nil {
-				log.Printf("rollup: update daily %s/%s: %v", dash, svc, err)
-			}
-			if err := r.store.UpdateSLAs(ctx, dash, svc); err != nil {
-				log.Printf("rollup: update slas %s/%s: %v", dash, svc, err)
+				if hour.Before(today) {
+					r.updateDaily(ctx, dash, svc, hour)
+				}
 			}
 		}
+	}
+}
+
+func (r *Runner) updateDaily(ctx context.Context, dash, svc string, day time.Time) {
+	if err := r.store.UpdateDailyRollup(ctx, dash, svc, day); err != nil {
+		log.Printf("rollup: update daily %s/%s %s: %v", dash, svc, day.Format("2006-01-02"), err)
 	}
 }
 

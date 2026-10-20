@@ -365,9 +365,11 @@ func (s *Store) GetAggregateRollups(ctx context.Context, dash, svc string, from,
 }
 
 // History holds one service's hourly aggregate rollups from the start of the
-// day retentionDays ago, with the current hour computed live from the samples.
+// day retentionDays ago, with the current hour computed live from the samples,
+// and its daily rollups for the last 366 days.
 type History struct {
 	Hours map[int64]AggregateRollup
+	Days  map[string]DailyRollup
 }
 
 func (s *Store) History(ctx context.Context, dash, svc string, now time.Time) (History, error) {
@@ -380,7 +382,11 @@ func (s *Store) History(ctx context.Context, dash, svc string, now time.Time) (H
 	if agg, ok := s.ComputeAggregate(ctx, dash, svc, cur); ok {
 		hours[cur.Unix()] = agg
 	}
-	return History{Hours: hours}, nil
+	days, err := s.GetDailyRollups(ctx, dash, svc, now.AddDate(0, 0, -365), now)
+	if err != nil {
+		return History{}, err
+	}
+	return History{Hours: hours, Days: days}, nil
 }
 
 // FailureWindow is a failure incident: a run of failing samples sharing the
@@ -615,97 +621,45 @@ func (s *Store) UpdateDailyRollup(ctx context.Context, dash, svc string, day tim
 	return nil
 }
 
-// EnsureYesterdayDaily computes yesterday's daily rollup. Called frequently
-// from the rollup runner; it's safe to call repeatedly.
-func (s *Store) EnsureYesterdayDaily(ctx context.Context, dash, svc string) error {
-	y := time.Now().UTC().AddDate(0, 0, -1).Truncate(24 * time.Hour)
-	return s.UpdateDailyRollup(ctx, dash, svc, y)
+// FormatPercent renders success/total as a percentage rounded down to at most
+// two decimals, without trailing zeros. It shows 100% only when nothing
+// failed, and an empty string when there were no checks.
+func FormatPercent(success, total int) string {
+	if total <= 0 {
+		return ""
+	}
+	if success >= total {
+		return "100%"
+	}
+	bp := int64(success) * 10000 / int64(total)
+	num := strings.TrimRight(fmt.Sprintf("%d.%02d", bp/100, bp%100), "0")
+	return strings.TrimRight(num, ".") + "%"
 }
 
-// FormatPercent renders a percentage with at most two decimal places and no
-// trailing zeros, so a whole value reads as "100%" rather than "100.00%".
-func FormatPercent(pct float64) string {
-	num := strings.TrimRight(fmt.Sprintf("%.2f", pct), "0")
-	num = strings.TrimRight(num, ".")
-	return num + "%"
-}
-
-// ComputeSLA computes the uptime percentage over the last `days` calendar
-// days (inclusive). Returns an empty string when there is no data.
-func (s *Store) ComputeSLA(ctx context.Context, dash, svc string, days int) (string, error) {
-	now := time.Now().UTC()
-	fromDay := now.AddDate(0, 0, -(days - 1)).Truncate(24 * time.Hour)
-
-	// Preferentially compute SLA from stored daily rollups (keeps a year's
-	// worth of daily summaries); fall back to hourly aggregates when daily
-	// rollups are unavailable.
-	dailyMap, err := s.GetDailyRollups(ctx, dash, svc, fromDay, now)
-	if err == nil && len(dailyMap) > 0 {
-		var success, failure int
-		for _, dr := range dailyMap {
+// Uptime counts the checks over the given number of UTC days ending today:
+// today so far and the days-1 days before it. A finished day counts from its
+// daily rollup when there is one, and from its hourly rollups otherwise.
+func (h History) Uptime(days int, now time.Time) (success, total int) {
+	type counts struct{ success, total int }
+	hourly := map[int64]counts{}
+	for epoch, r := range h.Hours {
+		day := time.Unix(epoch, 0).UTC().Truncate(24 * time.Hour).Unix()
+		c := hourly[day]
+		c.success += r.Success
+		c.total += r.Success + r.Failure
+		hourly[day] = c
+	}
+	today := now.UTC().Truncate(24 * time.Hour)
+	for d := 0; d < days; d++ {
+		day := today.AddDate(0, 0, -d)
+		if dr, ok := h.Days[day.Format("2006-01-02")]; ok && d > 0 {
 			success += dr.Success
-			failure += dr.Failure
+			total += dr.Success + dr.Failure
+			continue
 		}
-		// Overlay current day's partial data (hours) if it's within the window
-		today := now.Truncate(24 * time.Hour)
-		if !today.Before(fromDay) {
-			hours, _ := s.GetAggregateRollups(ctx, dash, svc, today, now)
-			for _, r := range hours {
-				success += r.Success
-				failure += r.Failure
-			}
-		}
-		total := success + failure
-		if total == 0 {
-			return "", nil
-		}
-		return FormatPercent(float64(success) / float64(total) * 100), nil
+		c := hourly[day.Unix()]
+		success += c.success
+		total += c.total
 	}
-
-	// Fallback: compute from hourly aggregate rollups across the requested
-	// window (same behavior as before).
-	from := fromDay
-	rollups, err := s.GetAggregateRollups(ctx, dash, svc, from, now)
-	if err != nil {
-		return "", err
-	}
-	curHour := now.Truncate(time.Hour)
-	if agg, ok := s.ComputeAggregate(ctx, dash, svc, curHour); ok {
-		rollups[curHour.Unix()] = agg
-	}
-	var success, failure int
-	for _, r := range rollups {
-		success += r.Success
-		failure += r.Failure
-	}
-	total := success + failure
-	if total == 0 {
-		return "", nil
-	}
-	return FormatPercent(float64(success) / float64(total) * 100), nil
-}
-
-// UpdateSLAs computes 7/30/365 day SLAs and stores them as fields on the
-// service meta hash (fields sla7, sla30, sla365). Errors are returned when
-// the underlying store operations fail.
-func (s *Store) UpdateSLAs(ctx context.Context, dash, svc string) error {
-	sla7, err := s.ComputeSLA(ctx, dash, svc, 7)
-	if err != nil {
-		return err
-	}
-	sla30, err := s.ComputeSLA(ctx, dash, svc, 30)
-	if err != nil {
-		return err
-	}
-	sla365, err := s.ComputeSLA(ctx, dash, svc, 365)
-	if err != nil {
-		return err
-	}
-
-	key := keys.Meta(dash, svc)
-	// Hset multiple fields
-	if err := s.primary.client.Do(ctx, s.primary.client.B().Hset().Key(key).FieldValue().FieldValue("sla7", sla7).FieldValue("sla30", sla30).FieldValue("sla365", sla365).Build()).Error(); err != nil {
-		return err
-	}
-	return nil
+	return success, total
 }

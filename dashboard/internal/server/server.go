@@ -433,7 +433,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 			Display: display,
 			Meta:    meta,
 			Status:  string(current),
-			SLA:     sla(hist, now),
+			SLA:     sla(hist, 30, now),
 			Daily:   daily,
 		}
 		idx, ok := groupIndex[group]
@@ -498,24 +498,10 @@ func (s *Server) dailyBars(hist store.History, now time.Time) []dayBar {
 	return bars
 }
 
-// sla computes the uptime percentage over the retention window as the ratio of
-// successful to total checks across all locations. Hours with no data simply
-// contribute nothing. Returns an empty string when there is no data at all.
-func sla(hist store.History, now time.Time) string {
-	from := now.Add(-29 * 24 * time.Hour).Unix()
-	var success, failure int
-	for epoch, r := range hist.Hours {
-		if epoch < from {
-			continue
-		}
-		success += r.Success
-		failure += r.Failure
-	}
-	total := success + failure
-	if total == 0 {
-		return ""
-	}
-	return store.FormatPercent(float64(success) / float64(total) * 100)
+// sla is the uptime over the given number of days ending today, across all
+// locations, or an empty string when there were no checks.
+func sla(hist store.History, days int, now time.Time) string {
+	return store.FormatPercent(hist.Uptime(days, now))
 }
 
 type windowView struct {
@@ -534,7 +520,9 @@ type serviceData struct {
 	Display      string
 	Group        string
 	Meta         store.Meta
-	SLA          string
+	SLA7         string
+	SLA30        string
+	SLA365       string
 	SelectedDay  string
 	WindowsTitle string
 	Windows      []windowView
@@ -585,7 +573,9 @@ func (s *Server) handleService(w http.ResponseWriter, r *http.Request) {
 		ServiceID:    svc,
 		Display:      display,
 		Group:        group,
-		SLA:          sla(hist, now),
+		SLA7:         sla(hist, 7, now),
+		SLA30:        sla(hist, 30, now),
+		SLA365:       sla(hist, 365, now),
 		SelectedDay:  selectedDay,
 		WindowsTitle: windowsTitle,
 		Meta:         meta,

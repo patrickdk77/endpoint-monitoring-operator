@@ -14,19 +14,19 @@
     <div class="card">
       <div class="meta">{{.Meta.Driver}} · {{.Meta.Endpoint}}</div>
       <div class="section-head">
-        <h3>Last 90 days</h3>
+        <h3>Last {{len .Daily}} days</h3>
         <div class="sla-grid" title="Uptime summaries">
           <div class="sla-card">
             <span class="sla-label">7 Days</span>
-            <span class="sla" id="sla7">—</span>
+            <span class="sla" id="sla7">{{formatSLA .SLA7}}</span>
           </div>
           <div class="sla-card">
             <span class="sla-label">30 Days</span>
-            <span class="sla" id="sla30">—</span>
+            <span class="sla" id="sla30">{{formatSLA .SLA30}}</span>
           </div>
           <div class="sla-card">
             <span class="sla-label">365 Days</span>
-            <span class="sla" id="sla365">—</span>
+            <span class="sla" id="sla365">{{formatSLA .SLA365}}</span>
           </div>
         </div>
       </div>
