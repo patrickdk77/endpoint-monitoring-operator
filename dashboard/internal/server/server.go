@@ -453,7 +453,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 // current-hour aggregate if checks have run this hour, otherwise the most
 // recently completed hour in the past 6 hours, otherwise unknown.
 func currentStatus(hist store.History, now time.Time) status.AggregateStatus {
-	since := now.Add(-6 * time.Hour).Unix()
+	since := now.Add(-store.StatusMaxAge).Unix()
 	latestEpoch := int64(-1)
 	for epoch := range hist.Hours {
 		if epoch >= since && epoch > latestEpoch {
@@ -619,7 +619,7 @@ func (s *Server) handleService(w http.ResponseWriter, r *http.Request) {
 	// A window left open at the end of the stream is only "ongoing" when the
 	// view actually reaches the present.
 	live := !to.Before(now.Truncate(time.Hour))
-	windows, err := s.failureWindows(r.Context(), dash, svc, from, to, live)
+	windows, err := s.failureWindows(r.Context(), dash, svc, from, to, now, live)
 	if err != nil {
 		unavailable(w, err)
 		return
@@ -643,8 +643,8 @@ func (s *Server) handleService(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (s *Server) failureWindows(ctx context.Context, dash, svc string, from, to time.Time, live bool) ([]windowView, error) {
-	raw, err := s.store.FailureWindows(ctx, dash, svc, from, to, live)
+func (s *Server) failureWindows(ctx context.Context, dash, svc string, from, to, now time.Time, live bool) ([]windowView, error) {
+	raw, err := s.store.FailureWindows(ctx, dash, svc, from, to, now, live)
 	if err != nil {
 		return nil, err
 	}
@@ -665,7 +665,7 @@ func (s *Server) failureWindows(ctx context.Context, dash, svc string, from, to 
 		}
 		if w.Ongoing {
 			v.End = "ongoing"
-			v.Duration = humanDuration(time.Now().UTC().Sub(start))
+			v.Duration = humanDuration(now.Sub(start))
 		} else {
 			v.End = end.Format("2006-01-02 15:04:05 UTC")
 			if d := end.Sub(start); d > 0 {

@@ -134,3 +134,15 @@ func TestASingleLocationWithOneFailedCheckIsDegraded(t *testing.T) {
 		t.Fatalf("one failed check in 60 at the only location does not show as degraded:\n%s", body)
 	}
 }
+
+func TestTheIssuesListShowsAnOutageOngoingBeforeTheHoursFirstCheck(t *testing.T) {
+	h, srv := newTestServer(t)
+	prev := time.Now().UTC().Truncate(time.Hour).Add(-time.Hour)
+	srv.HSet(keys.RollupAggregateHour("platform", "api"), strconv.FormatInt(prev.Unix(), 10),
+		`{"status":"major_outage","failure":6,"perLocation":{"east":{"total":6,"failure":6,"status":"outage","runs":[{"start":`+
+			strconv.FormatInt(prev.Unix(), 10)+`,"end":`+strconv.FormatInt(prev.Add(50*time.Minute).Unix(), 10)+
+			`,"count":6,"message":"down","openStart":true,"openEnd":true}]}}}`)
+	if _, body := get(t, h, "/platform/api"); !strings.Contains(body, ">ongoing<") {
+		t.Fatalf("an outage failing at the last check of the previous hour is not shown as ongoing:\n%s", body)
+	}
+}

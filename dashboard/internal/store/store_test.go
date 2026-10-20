@@ -147,7 +147,7 @@ func TestFailureWindowsFailsInsteadOfPanickingWhenTheRollupReadFails(t *testing.
 	now := time.Now().UTC()
 	seedSample(srv["east"], "platform", "api", now, false)
 	srv["east"].Fail("HGETALL", ":rollup:agg:hour", "ERR primary is restarting")
-	if _, err := st.FailureWindows(context.Background(), "platform", "api", now.Add(-time.Hour), now, true); err == nil {
+	if _, err := st.FailureWindows(context.Background(), "platform", "api", now.Add(-time.Hour), now, now, true); err == nil {
 		t.Fatal("FailureWindows succeeded although the rollup read failed")
 	}
 }

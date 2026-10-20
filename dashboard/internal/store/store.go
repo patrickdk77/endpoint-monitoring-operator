@@ -575,6 +575,11 @@ type FailureWindow struct {
 // as the same incident, absorbing sampling-offset differences between locations.
 const mergeGapSeconds = int64(300)
 
+// StatusMaxAge is how old a service's newest data may be for the dashboard to
+// still show its status. A location's failures more than this far apart are
+// separate incidents, and a run whose newest hour is older is not ongoing.
+const StatusMaxAge = 6 * time.Hour
+
 type segment struct {
 	loc     string
 	msg     string
@@ -589,20 +594,19 @@ type segment struct {
 // location's hourly runs back into continuous runs across hour boundaries, then
 // merges same-message runs that overlap in time into incidents listing every
 // reporting location. Incidents are returned most-recent-first. When live is
-// true, the current hour is recomputed on the fly and a run that is still open
-// at the latest sample of the current hour is marked Ongoing.
-func (s *Store) FailureWindows(ctx context.Context, dash, svc string, from, to time.Time, live bool) ([]FailureWindow, error) {
+// true, the current hour is recomputed on the fly, and a location's run that
+// holds its newest sample is marked Ongoing while that sample's hour is within
+// StatusMaxAge of now.
+func (s *Store) FailureWindows(ctx context.Context, dash, svc string, from, to, now time.Time, live bool) ([]FailureWindow, error) {
 	rollups, err := s.GetAggregateRollups(ctx, dash, svc, from, to)
 	if err != nil {
 		return nil, err
 	}
 
-	curEpoch := int64(-1)
-	curHour := time.Now().UTC().Truncate(time.Hour)
+	curHour := now.Truncate(time.Hour)
 	if live && !curHour.Before(from.Truncate(time.Hour)) && !curHour.After(to) {
-		curEpoch = curHour.Unix()
 		if agg, ok := s.ComputeAggregate(ctx, dash, svc, curHour); ok {
-			rollups[curEpoch] = agg
+			rollups[curHour.Unix()] = agg
 		}
 	}
 
@@ -613,33 +617,33 @@ func (s *Store) FailureWindows(ctx context.Context, dash, svc string, from, to t
 	sort.Slice(hours, func(i, j int) bool { return hours[i] < hours[j] })
 
 	segByLoc := map[string][]segment{}
-	prevOpenEnd := map[string]bool{}
-	lastEpoch := map[string]int64{}
+	open := map[string]bool{}
+	lastHour := map[string]int64{}
+	maxGap := int64(StatusMaxAge / time.Second)
 	for _, h := range hours {
 		for loc, lr := range rollups[h].PerLocation {
+			segs := segByLoc[loc]
 			for _, run := range lr.Runs {
-				segs := segByLoc[loc]
-				stitch := len(segs) > 0 && prevOpenEnd[loc] && run.OpenStart &&
+				stitch := open[loc] && run.OpenStart &&
 					segs[len(segs)-1].msg == run.Message &&
-					run.Start-segs[len(segs)-1].end <= mergeGapSeconds
+					run.Start-segs[len(segs)-1].end <= maxGap
 				if stitch {
 					segs[len(segs)-1].end = run.End
 					segs[len(segs)-1].count += run.Count
 				} else {
 					segs = append(segs, segment{loc: loc, msg: run.Message, start: run.Start, end: run.End, count: run.Count})
 				}
-				segByLoc[loc] = segs
-				prevOpenEnd[loc] = run.OpenEnd
-				lastEpoch[loc] = h
 			}
+			segByLoc[loc] = segs
+			open[loc] = len(lr.Runs) > 0 && lr.Runs[len(lr.Runs)-1].OpenEnd
+			lastHour[loc] = h
 		}
 	}
 
 	var all []segment
+	recent := now.Add(-StatusMaxAge).Unix()
 	for loc, segs := range segByLoc {
-		// A location's most recent run is ongoing only if it is still open at
-		// the latest sample of the current hour.
-		if live && curEpoch >= 0 && lastEpoch[loc] == curEpoch && prevOpenEnd[loc] && len(segs) > 0 {
+		if live && open[loc] && lastHour[loc] >= recent {
 			segs[len(segs)-1].ongoing = true
 		}
 		all = append(all, segs...)
