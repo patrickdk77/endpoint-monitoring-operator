@@ -75,28 +75,6 @@ func matchTLSA(cert *x509.Certificate, tlsa *TLSA) bool {
 	return bytes.Equal(hash, tlsa.Data)
 }
 
-// ParseTLSAData converts hex encoded cert association data into bytes
-func ParseTLSAData(hexData string) ([]byte, error) {
-	return hex.DecodeString(hexData)
-}
-
-// VerifyDANEParams is a helper to verify with raw parameters
-func VerifyDANEParams(peerCerts []*x509.Certificate, usage, selector, matchingType uint8, hexData string) error {
-	data, err := ParseTLSAData(hexData)
-	if err != nil {
-		return fmt.Errorf("invalid TLSA hex data: %v", err)
-	}
-
-	tlsa := &TLSA{
-		Usage:        usage,
-		Selector:     selector,
-		MatchingType: matchingType,
-		Data:         data,
-	}
-
-	return VerifyDANE(peerCerts, tlsa)
-}
-
 // getNameserver looks up a nameserver from /etc/resolv.conf
 func getNameserver() string {
 	ns := "8.8.8.8:53"
