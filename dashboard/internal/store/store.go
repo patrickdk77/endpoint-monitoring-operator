@@ -19,12 +19,15 @@ import (
 )
 
 type LocationRollup struct {
-	Total   int          `json:"total"`
-	Success int          `json:"success"`
-	Failure int          `json:"failure"`
-	AvgMs   float64      `json:"avgMs"`
-	Status  string       `json:"status"`
-	Runs    []FailureRun `json:"runs,omitempty"`
+	Total    int          `json:"total"`
+	Success  int          `json:"success"`
+	Failure  int          `json:"failure"`
+	AvgMs    float64      `json:"avgMs"`
+	MinMs    float64      `json:"minMs,omitempty"`
+	MaxMs    float64      `json:"maxMs,omitempty"`
+	Measured int          `json:"measured,omitempty"`
+	Status   string       `json:"status"`
+	Runs     []FailureRun `json:"runs,omitempty"`
 }
 
 // FailureRun is a maximal run of consecutive failing samples within a single
@@ -221,6 +224,7 @@ func (s *Store) ComputeLocationRollup(ctx context.Context, locName, dash, svc st
 	var successes, failures int
 	var totalMs int64
 	var msSamples int
+	var minMs, maxMs int64
 	var runs []FailureRun
 	var curRun FailureRun
 	open := false
@@ -232,7 +236,13 @@ func (s *Store) ComputeLocationRollup(ctx context.Context, locName, dash, svc st
 		}
 	}
 	for idx, smp := range samplesList {
-		if smp.hasDetail {
+		if smp.hasDetail && !smp.fail {
+			if msSamples == 0 || smp.ms < minMs {
+				minMs = smp.ms
+			}
+			if smp.ms > maxMs {
+				maxMs = smp.ms
+			}
 			totalMs += smp.ms
 			msSamples++
 		}
@@ -262,6 +272,9 @@ func (s *Store) ComputeLocationRollup(ctx context.Context, locName, dash, svc st
 	}
 	if msSamples > 0 {
 		rollup.AvgMs = float64(totalMs) / float64(msSamples)
+		rollup.MinMs = float64(minMs)
+		rollup.MaxMs = float64(maxMs)
+		rollup.Measured = msSamples
 	}
 	return rollup, nil
 }
@@ -304,9 +317,9 @@ func (s *Store) ComputeAggregate(ctx context.Context, dash, svc string, hour tim
 		locStatuses = append(locStatuses, status.LocationStatus(lr.Status))
 		totalSuccess += lr.Success
 		totalFailure += lr.Failure
-		if lr.AvgMs > 0 {
-			totalMs += lr.AvgMs
-			msSamples++
+		if lr.Measured > 0 {
+			totalMs += lr.AvgMs * float64(lr.Measured)
+			msSamples += lr.Measured
 		}
 	}
 

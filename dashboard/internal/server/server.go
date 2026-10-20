@@ -160,6 +160,7 @@ func (s *Server) Handler() http.Handler {
 	apiMux.HandleFunc("GET /dashboards", s.handleAPIDashboards)
 	apiMux.HandleFunc("GET /dashboard/{dash}/overview", s.handleAPIOverview)
 	apiMux.HandleFunc("GET /dashboard/{dash}/{name}", s.handleAPIService)
+	apiMux.HandleFunc("GET /dashboard/{dash}/{name}/latency", s.handleAPILatency)
 
 	pageMux := http.NewServeMux()
 	pageMux.HandleFunc("GET /{dash}", s.handleDashboard)
@@ -524,9 +525,63 @@ type serviceData struct {
 	SLA30        string
 	SLA365       string
 	SelectedDay  string
+	Ranges       []rangeOption
+	IssueRange   string
 	WindowsTitle string
 	Windows      []windowView
 	Daily        []dayBar
+}
+
+// maxPlotPoints caps each location's series in the latency chart for ranges
+// longer than a day; the one-day range plots every check.
+const maxPlotPoints = 1440
+
+type rangeOption struct {
+	Key   string
+	Label string
+	Days  int
+}
+
+// rangeOptions lists the ranges the issues list and the chart offer: 24
+// hours, 7 days and 30 days, then the whole retention, never past it.
+func (s *Server) rangeOptions() []rangeOption {
+	var opts []rangeOption
+	for _, o := range []rangeOption{{"1d", "24 hours", 1}, {"7d", "7 days", 7}, {"30d", "30 days", 30}} {
+		if o.Days <= s.retention {
+			opts = append(opts, o)
+		}
+	}
+	if last := opts[len(opts)-1]; s.retention > last.Days {
+		opts = append(opts, rangeOption{strconv.Itoa(s.retention) + "d", strconv.Itoa(s.retention) + " days", s.retention})
+	}
+	return opts
+}
+
+func (s *Server) parseRange(key string) rangeOption {
+	opts := s.rangeOptions()
+	for _, o := range opts {
+		if o.Key == key {
+			return o
+		}
+	}
+	return opts[0]
+}
+
+func (s *Server) handleAPILatency(w http.ResponseWriter, r *http.Request) {
+	dash := r.PathValue("dash")
+	svc := r.PathValue("name")
+	rng := s.parseRange(r.URL.Query().Get("range"))
+	maxPoints := maxPlotPoints
+	if rng.Days <= 1 {
+		maxPoints = 0
+	}
+	now := time.Now().UTC()
+	lat, err := s.store.Latency(r.Context(), dash, svc, now.Add(-time.Duration(rng.Days)*24*time.Hour), now, maxPoints)
+	if err != nil {
+		unavailable(w, err)
+		return
+	}
+	writeJSON(w, lat)
 }
 
 func (s *Server) handleService(w http.ResponseWriter, r *http.Request) {
@@ -546,11 +601,13 @@ func (s *Server) handleService(w http.ResponseWriter, r *http.Request) {
 	}
 	group, display := splitGroup(name)
 
-	// Default view: the rolling last 24 hours ending now. When a ?day=YYYY-MM-DD
-	// is supplied, show that calendar day's 24 hours instead.
-	from := now.Add(-24 * time.Hour).Truncate(time.Hour)
+	// Default view: the rolling range chosen with ?range= (24 hours unless
+	// set) ending now. When a ?day=YYYY-MM-DD is supplied, show that calendar
+	// day's 24 hours instead.
+	issueRange := s.parseRange(r.URL.Query().Get("range"))
+	from := now.Add(-time.Duration(issueRange.Days) * 24 * time.Hour).Truncate(time.Hour)
 	to := now
-	windowsTitle := "Issues (last 24 hours)"
+	windowsTitle := "Issues (last " + issueRange.Label + ")"
 	selectedDay := ""
 	if d, err := time.Parse("2006-01-02", r.URL.Query().Get("day")); err == nil {
 		from = d.UTC()
@@ -577,6 +634,8 @@ func (s *Server) handleService(w http.ResponseWriter, r *http.Request) {
 		SLA30:        sla(hist, 30, now),
 		SLA365:       sla(hist, 365, now),
 		SelectedDay:  selectedDay,
+		Ranges:       s.rangeOptions(),
+		IssueRange:   issueRange.Key,
 		WindowsTitle: windowsTitle,
 		Meta:         meta,
 		Windows:      windows,
