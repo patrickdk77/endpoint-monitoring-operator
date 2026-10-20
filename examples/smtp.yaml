@@ -7,8 +7,9 @@ metadata:
 spec:
   driver: smtp
   endpoint: smtp.example.com:25
-  helo: smtp.example.com
-  smartTls: true
+  smtpCheck:
+    helo: smtp.example.com
+    startTls: true
   checkInterval: 60
   notify:
     slack:
@@ -20,13 +21,14 @@ spec:
 apiVersion: monitoring.licious.app/v1alpha1
 kind: EndpointMonitor
 metadata:
-  name: smtp-check
+  name: smtps-check
   namespace: endpoint-monitoring-operator-system
 spec:
   driver: smtp
   endpoint: smtp.example.com:465
-  helo: smtp.example.com
-  tls: true
+  smtpCheck:
+    helo: smtp.example.com
+    tls: true
   checkInterval: 60
   notify:
     slack:

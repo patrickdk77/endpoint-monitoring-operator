@@ -6,7 +6,7 @@ metadata:
 spec:
   checkInterval: 60  # every 1 minute
   driver: ping
-  endpoint: 8.8.8.8
+  endpoint: 8.8.8.8:53
   notify:
     slack:
       enabled: true
