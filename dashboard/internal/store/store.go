@@ -815,30 +815,41 @@ func FormatPercent(success, total int) string {
 	return strings.TrimRight(num, ".") + "%"
 }
 
-// Uptime counts the checks over the given number of UTC days ending today:
-// today so far and the days-1 days before it. A finished day counts from its
-// daily rollup when there is one, and from its hourly rollups otherwise.
-func (h History) Uptime(days int, now time.Time) (success, total int) {
-	type counts struct{ success, total int }
-	hourly := map[int64]counts{}
+// DayCount is one day's number of checks and how many of them succeeded.
+type DayCount struct {
+	Success, Total int
+}
+
+// ByDay counts the checks of every UTC day in the history, keyed as
+// 2006-01-02. A finished day counts from its daily rollup when there is one,
+// and every other day from its hourly rollups.
+func (h History) ByDay(now time.Time) map[string]DayCount {
+	out := map[string]DayCount{}
 	for epoch, r := range h.Hours {
-		day := time.Unix(epoch, 0).UTC().Truncate(24 * time.Hour).Unix()
-		c := hourly[day]
-		c.success += r.Success
-		c.total += r.Success + r.Failure
-		hourly[day] = c
+		key := time.Unix(epoch, 0).UTC().Format("2006-01-02")
+		c := out[key]
+		c.Success += r.Success
+		c.Total += r.Success + r.Failure
+		out[key] = c
 	}
+	today := now.UTC().Format("2006-01-02")
+	for key, dr := range h.Days {
+		if key < today {
+			out[key] = DayCount{Success: dr.Success, Total: dr.Success + dr.Failure}
+		}
+	}
+	return out
+}
+
+// Uptime counts the checks over the given number of UTC days ending today:
+// today so far and the days-1 days before it, each counted as ByDay counts it.
+func (h History) Uptime(days int, now time.Time) (success, total int) {
+	byDay := h.ByDay(now)
 	today := now.UTC().Truncate(24 * time.Hour)
 	for d := 0; d < days; d++ {
-		day := today.AddDate(0, 0, -d)
-		if dr, ok := h.Days[day.Format("2006-01-02")]; ok && d > 0 {
-			success += dr.Success
-			total += dr.Success + dr.Failure
-			continue
-		}
-		c := hourly[day.Unix()]
-		success += c.success
-		total += c.total
+		c := byDay[today.AddDate(0, 0, -d).Format("2006-01-02")]
+		success += c.Success
+		total += c.Total
 	}
 	return success, total
 }

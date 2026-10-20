@@ -31,7 +31,7 @@
         </div>
       </div>
       <div class="timeline">
-        {{range .Daily}}<a class="bar {{barClass .Status .Date}}" href="/{{$.Dashboard}}/{{$.ServiceID}}?day={{.Date}}" title="{{.Label}}: {{.Status}} (view this day)"></a>{{end}}
+        {{range .Daily}}<a class="bar {{barClass .Status .Date}}{{if .Color}} bar-shaded{{end}}"{{with .Color}} style="--shade: {{.}}"{{end}} href="/{{$.Dashboard}}/{{$.ServiceID}}?day={{.Date}}" title="{{.Label}}: {{if .Total}}{{.Uptime}} ({{.Failed}} of {{.Total}} failed){{else}}no data{{end}} (view this day)"></a>{{end}}
       </div>
     </div>
     <div class="card">

@@ -370,6 +370,33 @@ type dayBar struct {
 	Date   string
 	Status string
 	Label  string
+	Uptime string
+	Failed int
+	Total  int
+	Color  template.CSS
+}
+
+// uptimeColor shades a day bar by its uptime on a scale spaced by nines: 100%
+// is the operational color, 99.9% halfway to degraded, 99% degraded, 95%
+// halfway to major_outage, and 90% or less major_outage.
+func uptimeColor(success, total int) template.CSS {
+	if success >= total {
+		return "var(--operational)"
+	}
+	up := 100 * float64(success) / float64(total)
+	anchors := []float64{100, 99.9, 99, 95, 90}
+	step := float64(len(anchors) - 1)
+	for i := 1; i < len(anchors); i++ {
+		if up >= anchors[i] {
+			step = float64(i-1) + (anchors[i-1]-up)/(anchors[i-1]-anchors[i])
+			break
+		}
+	}
+	from, to, mix := "operational", "degraded", step/2
+	if step > 2 {
+		from, to, mix = "degraded", "major_outage", (step-2)/2
+	}
+	return template.CSS(fmt.Sprintf("color-mix(in srgb, var(--%s) %.1f%%, var(--%s))", to, 100*mix, from))
 }
 
 type serviceGroup struct {
@@ -482,6 +509,7 @@ func (s *Server) dailyBars(hist store.History, now time.Time) []dayBar {
 		byDay[day] = status.WorstAggregate(byDay[day], st)
 	}
 
+	counts := hist.ByDay(now)
 	var bars []dayBar
 	for d := 0; d < s.retention; d++ {
 		day := from.AddDate(0, 0, d)
@@ -490,11 +518,18 @@ func (s *Server) dailyBars(hist store.History, now time.Time) []dayBar {
 		if st == "" {
 			st = status.AggregateUnknown
 		}
-		bars = append(bars, dayBar{
+		bar := dayBar{
 			Date:   key,
 			Status: string(st),
 			Label:  key,
-		})
+		}
+		if c := counts[key]; c.Total > 0 {
+			bar.Uptime = store.FormatPercent(c.Success, c.Total)
+			bar.Failed = c.Total - c.Success
+			bar.Total = c.Total
+			bar.Color = uptimeColor(c.Success, c.Total)
+		}
+		bars = append(bars, bar)
 	}
 	return bars
 }
