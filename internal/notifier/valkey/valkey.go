@@ -11,7 +11,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-const defaultRetentionDays = 90
+const defaultRetentionDays = 7
 
 type ValkeyNotifier struct {
 	cfg              *v1.ValkeyConfig

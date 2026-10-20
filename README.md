@@ -108,14 +108,14 @@ notify:
     dashboards:
       - platform
     name: api-status          # optional; keep identical across locations
-    retentionDays: 90
+    retentionDays: 7
     secretRef:
       name: valkey-credentials  # keys: username (optional), password
 ```
 
 Deploy one Valkey instance per monitoring location. Operators are location-agnostic; the dashboard app names each Valkey server as a location. Use the same `name` (or monitor name) and `dashboards` across locations for a service to aggregate correctly.
 
-`name` and each dashboard name must not contain `:`, because the Valkey keys use it as a separator. `retentionDays` must be at least 1 and defaults to 90.
+`name` and each dashboard name must not contain `:`, because the Valkey keys use it as a separator. `retentionDays` is how long each raw check sample is kept; it must be at least 1 and defaults to 7. The dashboard builds hourly and daily rollups from these samples and keeps those for its own, longer retention.
 
 ---
 

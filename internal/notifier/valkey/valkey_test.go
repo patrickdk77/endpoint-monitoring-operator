@@ -15,7 +15,7 @@ func TestNewValidatesNamesAndRetention(t *testing.T) {
 		wantErr     string
 		wantSeconds int
 	}{
-		{"defaults to 90 days", v1.ValkeyConfig{Dashboards: []string{"prod"}}, "", 90 * 86400},
+		{"defaults to 7 days", v1.ValkeyConfig{Dashboards: []string{"prod"}}, "", 7 * 86400},
 		{"one day", v1.ValkeyConfig{Dashboards: []string{"prod"}, RetentionDays: days(1)}, "", 86400},
 		{"zero days", v1.ValkeyConfig{Dashboards: []string{"prod"}, RetentionDays: days(0)}, "retentionDays must be at least 1", 0},
 		{"negative days", v1.ValkeyConfig{Dashboards: []string{"prod"}, RetentionDays: days(-1)}, "retentionDays must be at least 1", 0},
