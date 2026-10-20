@@ -98,6 +98,13 @@ func (s *Server) HGetAll(key string) map[string]string {
 	return out
 }
 
+// SetKeyTTL gives key a key-wide TTL, as EXPIRE would.
+func (s *Server) SetKeyTTL(key string, ttl int64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.keyTTL[key] = ttl
+}
+
 // KeyTTL returns the TTL in seconds last set on key with EXPIRE.
 func (s *Server) KeyTTL(key string) (int64, bool) {
 	s.mu.Lock()
@@ -261,6 +268,22 @@ func (s *Server) reply(w *bufio.Writer, args []string) {
 		for _, f := range fields {
 			writeBulk(w, f)
 			writeBulk(w, h[f])
+		}
+	case "HGET":
+		if v, ok := s.hashes[args[1]][args[2]]; ok {
+			writeBulk(w, v)
+		} else {
+			fmt.Fprintf(w, "_\r\n")
+		}
+	case "HKEYS":
+		fields := make([]string, 0, len(s.hashes[args[1]]))
+		for f := range s.hashes[args[1]] {
+			fields = append(fields, f)
+		}
+		sort.Strings(fields)
+		fmt.Fprintf(w, "*%d\r\n", len(fields))
+		for _, f := range fields {
+			writeBulk(w, f)
 		}
 	case "HDEL":
 		removed := 0

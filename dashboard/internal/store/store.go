@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -50,6 +51,8 @@ type AggregateRollup struct {
 	Failure     int                       `json:"failure"`
 	AvgMs       float64                   `json:"avgMs"`
 	PerLocation map[string]LocationRollup `json:"perLocation"`
+	Missing     []string                  `json:"missing,omitempty"`
+	InProgress  bool                      `json:"inProgress,omitempty"`
 }
 
 type Meta struct {
@@ -299,57 +302,202 @@ func splitDetail(detail string) []string {
 
 // ComputeAggregate reads raw samples for the given hour from every location
 // (read-only) and computes the per-location rollups plus the cross-location
-// aggregate status. It performs no writes. The bool is false when no location
-// has any data for the hour.
+// aggregate status. It performs no writes. A location that could not be read
+// is listed in Missing. The bool is false when no location has any data for
+// the hour.
 func (s *Store) ComputeAggregate(ctx context.Context, dash, svc string, hour time.Time) (AggregateRollup, bool) {
-	perLocation := make(map[string]LocationRollup)
-	var locStatuses []status.LocationStatus
-	var totalSuccess, totalFailure int
-	var totalMs float64
-	var msSamples int
+	agg, _ := s.computeAggregate(ctx, dash, svc, hour)
+	return agg, len(agg.PerLocation) > 0
+}
 
+// computeAggregate is ComputeAggregate that also returns why each missing
+// location could not be read.
+func (s *Store) computeAggregate(ctx context.Context, dash, svc string, hour time.Time) (AggregateRollup, map[string]error) {
+	perLocation := make(map[string]LocationRollup)
+	var missing []string
+	var failed map[string]error
 	for _, loc := range s.LocationNames() {
 		lr, err := s.ComputeLocationRollup(ctx, loc, dash, svc, hour)
-		if err != nil || lr.Total == 0 {
+		if err != nil {
+			if failed == nil {
+				failed = map[string]error{}
+			}
+			failed[loc] = err
+			missing = append(missing, loc)
 			continue
 		}
-		perLocation[loc] = lr
+		if lr.Total > 0 {
+			perLocation[loc] = lr
+		}
+	}
+	agg := aggregate(perLocation)
+	agg.Missing = missing
+	return agg, failed
+}
+
+// aggregate sums one hour's per-location rollups.
+func aggregate(perLocation map[string]LocationRollup) AggregateRollup {
+	names := make([]string, 0, len(perLocation))
+	for name := range perLocation {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	agg := AggregateRollup{PerLocation: perLocation}
+	var locStatuses []status.LocationStatus
+	var totalMs float64
+	var msSamples int
+	for _, name := range names {
+		lr := perLocation[name]
 		locStatuses = append(locStatuses, status.LocationStatus(lr.Status))
-		totalSuccess += lr.Success
-		totalFailure += lr.Failure
+		agg.Success += lr.Success
+		agg.Failure += lr.Failure
 		if lr.Measured > 0 {
 			totalMs += lr.AvgMs * float64(lr.Measured)
 			msSamples += lr.Measured
 		}
 	}
-
-	if len(locStatuses) == 0 {
-		return AggregateRollup{}, false
-	}
-
-	agg := AggregateRollup{
-		Status:      string(status.AggregateFromLocations(locStatuses)),
-		Success:     totalSuccess,
-		Failure:     totalFailure,
-		PerLocation: perLocation,
-	}
+	agg.Status = string(status.AggregateFromLocations(locStatuses))
 	if msSamples > 0 {
 		agg.AvgMs = totalMs / float64(msSamples)
 	}
-	return agg, true
+	return agg
 }
 
-func (s *Store) WriteAggregateRollup(ctx context.Context, dash, svc string, hour time.Time, rollup AggregateRollup) error {
+// dailyRetention is how long a daily rollup is kept.
+const dailyRetention = 365 * 24 * time.Hour
+
+// HourRollup reports what RollupHour did with one service-hour: whether it
+// stored a rollup, and why each location it could not read failed.
+type HourRollup struct {
+	Written bool
+	Missing map[string]error
+}
+
+// RollupHour computes the hour's rollup from every location's raw samples and
+// stores it until the hour is older than the retention. A location that could
+// not be read is listed in the rollup's Missing and keeps what the stored
+// rollup holds for it, and every location keeps its stored counts when they
+// are higher, as they are once its raw samples have expired. A rollup written
+// before its hour ends is marked InProgress. With mark set, a finished hour
+// with no readable data and a location that could not be read is stored with
+// no locations, so a later backfill finds it; such an hour is deleted once
+// every location answers with no data. The error covers reading the stored rollup and writing the new
+// one; nothing is written when the stored rollup cannot be read.
+func (s *Store) RollupHour(ctx context.Context, dash, svc string, hour, now time.Time, mark bool) (HourRollup, error) {
+	expiresAt := hour.Add(time.Duration(s.retention) * time.Second)
+	if !expiresAt.After(now) {
+		return HourRollup{}, nil
+	}
+	agg, failed := s.computeAggregate(ctx, dash, svc, hour)
+	res := HourRollup{Missing: failed}
+	key, field := keys.RollupAggregateHour(dash, svc), strconv.FormatInt(hour.Unix(), 10)
+	c := s.primary.client
+	stored, err := c.Do(ctx, c.B().Hget().Key(key).Field(field).Build()).ToString()
+	if err != nil && !valkey.IsValkeyNil(err) {
+		return res, err
+	}
+	var old AggregateRollup
+	if err == nil && json.Unmarshal([]byte(stored), &old) == nil {
+		for loc, lr := range old.PerLocation {
+			if lr.Total > agg.PerLocation[loc].Total {
+				agg.PerLocation[loc] = lr
+			}
+		}
+	}
+	inProgress := now.Before(hour.Add(time.Hour))
+	placeholder := len(old.Missing) > 0 && len(old.PerLocation) == 0
+	if len(agg.PerLocation) == 0 {
+		if placeholder && len(agg.Missing) == 0 {
+			return res, c.Do(ctx, c.B().Hdel().Key(key).Field(field).Build()).Error()
+		}
+		if len(agg.Missing) == 0 || inProgress || !mark || (placeholder && slices.Equal(old.Missing, agg.Missing)) {
+			return res, nil
+		}
+	}
+	rollup := aggregate(agg.PerLocation)
+	rollup.Missing = agg.Missing
+	rollup.InProgress = inProgress
 	data, err := json.Marshal(rollup)
+	if err != nil {
+		return res, err
+	}
+	res.Written, err = s.writeExpiring(ctx, key, field, string(data), expiresAt, now)
+	return res, err
+}
+
+// writeExpiring stores one hash field on the primary with its own TTL, ending
+// at expiresAt, then removes any key-wide TTL, which would drop every field at
+// once. It writes nothing for a field already past expiresAt, and keeps the
+// key-wide TTL when the field's TTL could not be set.
+func (s *Store) writeExpiring(ctx context.Context, key, field, value string, expiresAt, now time.Time) (bool, error) {
+	ttl := int64(expiresAt.Sub(now) / time.Second)
+	if ttl <= 0 {
+		return false, nil
+	}
+	c := s.primary.client
+	for _, resp := range c.DoMulti(ctx,
+		c.B().Hset().Key(key).FieldValue().FieldValue(field, value).Build(),
+		c.B().Hexpire().Key(key).Seconds(ttl).Fields().Numfields(1).Field(field).Build(),
+	) {
+		if err := resp.Error(); err != nil {
+			return false, err
+		}
+	}
+	return true, c.Do(ctx, c.B().Persist().Key(key).Build()).Error()
+}
+
+// ExpireRollupFields gives every stored hourly and daily rollup field of a
+// service the TTL it would have had under per-field expiry, and deletes those
+// already past it. Rollups stored before per-field expiry only had a
+// key-wide TTL that each write renewed, so none of them ever expired.
+func (s *Store) ExpireRollupFields(ctx context.Context, dash, svc string, now time.Time) error {
+	hourly := func(field string) (time.Time, bool) {
+		epoch, err := strconv.ParseInt(field, 10, 64)
+		if err != nil {
+			return time.Time{}, false
+		}
+		return time.Unix(epoch, 0).Add(time.Duration(s.retention) * time.Second), true
+	}
+	if err := s.expireFields(ctx, keys.RollupAggregateHour(dash, svc), now, hourly); err != nil {
+		return err
+	}
+	daily := func(field string) (time.Time, bool) {
+		day, err := time.Parse("2006-01-02", field)
+		if err != nil {
+			return time.Time{}, false
+		}
+		return day.Add(dailyRetention), true
+	}
+	return s.expireFields(ctx, keys.RollupDaily(dash, svc), now, daily)
+}
+
+func (s *Store) expireFields(ctx context.Context, key string, now time.Time, expiry func(string) (time.Time, bool)) error {
+	c := s.primary.client
+	fields, err := c.Do(ctx, c.B().Hkeys().Key(key).Build()).AsStrSlice()
 	if err != nil {
 		return err
 	}
-	field := strconv.FormatInt(hour.Unix(), 10)
-	key := keys.RollupAggregateHour(dash, svc)
-	if err := s.primary.client.Do(ctx, s.primary.client.B().Hset().Key(key).FieldValue().FieldValue(field, string(data)).Build()).Error(); err != nil {
-		return err
+	var cmds []valkey.Completed
+	for _, field := range fields {
+		at, ok := expiry(field)
+		if !ok {
+			continue
+		}
+		if ttl := int64(at.Sub(now) / time.Second); ttl > 0 {
+			cmds = append(cmds, c.B().Hexpire().Key(key).Seconds(ttl).Fields().Numfields(1).Field(field).Build())
+		} else {
+			cmds = append(cmds, c.B().Hdel().Key(key).Field(field).Build())
+		}
 	}
-	return s.primary.client.Do(ctx, s.primary.client.B().Expire().Key(key).Seconds(int64(s.retention)).Build()).Error()
+	if len(cmds) == 0 {
+		return nil
+	}
+	for _, resp := range c.DoMulti(ctx, cmds...) {
+		if err := resp.Error(); err != nil {
+			return err
+		}
+	}
+	return c.Do(ctx, c.B().Persist().Key(key).Build()).Error()
 }
 
 func (s *Store) GetAggregateRollups(ctx context.Context, dash, svc string, from, to time.Time) (map[int64]AggregateRollup, error) {
@@ -558,20 +706,15 @@ type DailyRollup struct {
 	Total   int    `json:"total"`
 }
 
-// WriteDailyRollup stores a single day's rollup in the primary store and
-// expires it after 365 days.
-func (s *Store) WriteDailyRollup(ctx context.Context, dash, svc string, day time.Time, dr DailyRollup) error {
+// WriteDailyRollup stores a single day's rollup in the primary store until the
+// day is 365 days old.
+func (s *Store) WriteDailyRollup(ctx context.Context, dash, svc string, day time.Time, dr DailyRollup, now time.Time) error {
 	data, err := json.Marshal(dr)
 	if err != nil {
 		return err
 	}
-	field := day.Format("2006-01-02")
-	key := keys.RollupDaily(dash, svc)
-	if err := s.primary.client.Do(ctx, s.primary.client.B().Hset().Key(key).FieldValue().FieldValue(field, string(data)).Build()).Error(); err != nil {
-		return err
-	}
-	// expire after 365 days
-	return s.primary.client.Do(ctx, s.primary.client.B().Expire().Key(key).Seconds(int64(365*24*3600)).Build()).Error()
+	_, err = s.writeExpiring(ctx, keys.RollupDaily(dash, svc), day.Format("2006-01-02"), string(data), day.Add(dailyRetention), now)
+	return err
 }
 
 // GetDailyRollups reads stored daily rollups over [from, to].
@@ -618,20 +761,22 @@ func computeDailyFromHours(rollups map[int64]AggregateRollup) map[string]DailyRo
 
 // UpdateDailyRollup computes and writes the daily rollup for the provided day
 // (UTC day). It reads hourly aggregate rollups for that day and writes a
-// single daily summary. If no data exists for the day, nothing is written.
-func (s *Store) UpdateDailyRollup(ctx context.Context, dash, svc string, day time.Time) error {
+// single daily summary, and reports whether it wrote one. If no data exists
+// for the day, nothing is written.
+func (s *Store) UpdateDailyRollup(ctx context.Context, dash, svc string, day, now time.Time) (bool, error) {
 	from := day.Truncate(24 * time.Hour)
 	to := from.Add(24*time.Hour - time.Second)
 	hours, err := s.GetAggregateRollups(ctx, dash, svc, from, to)
 	if err != nil {
-		return err
+		return false, err
 	}
 	daily := computeDailyFromHours(hours)
 	fld := from.Format("2006-01-02")
 	if dr, ok := daily[fld]; ok && dr.Total > 0 {
-		return s.WriteDailyRollup(ctx, dash, svc, from, dr)
+		err := s.WriteDailyRollup(ctx, dash, svc, from, dr, now)
+		return err == nil, err
 	}
-	return nil
+	return false, nil
 }
 
 // FormatPercent renders success/total as a percentage rounded down to at most
