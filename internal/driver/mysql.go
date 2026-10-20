@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-sql-driver/mysql"
@@ -16,6 +17,7 @@ import (
 )
 
 type MYSQLDriver struct {
+	kind     string
 	endpoint string
 	family   string
 	username string
@@ -24,6 +26,14 @@ type MYSQLDriver struct {
 }
 
 func NewMYSQLDriver(endpoint, family string, check *v1.MysqlCheck, namespace string, client client.Client) (Driver, error) {
+	return newMySQLFamilyDriver("mysql", endpoint, family, check, namespace, client)
+}
+
+func NewMariaDBDriver(endpoint, family string, check *v1.MysqlCheck, namespace string, client client.Client) (Driver, error) {
+	return newMySQLFamilyDriver("mariadb", endpoint, family, check, namespace, client)
+}
+
+func newMySQLFamilyDriver(kind, endpoint, family string, check *v1.MysqlCheck, namespace string, client client.Client) (Driver, error) {
 	if endpoint == "" {
 		return nil, fmt.Errorf("endpoint cannot be empty")
 	}
@@ -44,6 +54,7 @@ func NewMYSQLDriver(endpoint, family string, check *v1.MysqlCheck, namespace str
 	}
 
 	return &MYSQLDriver{
+		kind:     kind,
 		endpoint: endpoint,
 		family:   family,
 		username: username,
@@ -66,12 +77,12 @@ func (m *MYSQLDriver) Check() (*CheckResult, error) {
 	if err != nil {
 		result.Success = false
 		result.Error = err
-		result.Message = fmt.Sprintf("MYSQL check failed: %v", err)
+		result.Message = fmt.Sprintf("%s check failed: %v", strings.ToUpper(m.kind), err)
 		return result, nil
 	}
 
 	result.Success = true
-	result.Message = fmt.Sprintf("MYSQL check successful (response time: %v)", duration)
+	result.Message = fmt.Sprintf("%s check successful (response time: %v)", strings.ToUpper(m.kind), duration)
 
 	return result, nil
 }
@@ -125,10 +136,10 @@ func checkMySQL(ctx context.Context, db *sql.DB, check *v1.MysqlCheck) error {
 	isReplica := check != nil && check.MaxSecondsBehindMaster != nil
 	isReadOnly := readOnlyValue == "ON" || readOnlyValue == "1"
 	if isReplica && !isReadOnly {
-		return fmt.Errorf("mysql is expected to be in readonly mode (it is a slave), but read_only is %s", readOnlyValue)
+		return fmt.Errorf("the server is expected to be in readonly mode (it is a replica), but read_only is %s", readOnlyValue)
 	}
 	if !isReplica && isReadOnly {
-		return fmt.Errorf("mysql is expected to NOT be in readonly mode (it is a master), but read_only is %s", readOnlyValue)
+		return fmt.Errorf("the server is expected to NOT be in readonly mode (it is a primary), but read_only is %s", readOnlyValue)
 	}
 	if !isReplica {
 		return nil
@@ -220,5 +231,5 @@ func (m *MYSQLDriver) GetEndpoint() string {
 }
 
 func (m *MYSQLDriver) GetType() string {
-	return "mysql"
+	return m.kind
 }

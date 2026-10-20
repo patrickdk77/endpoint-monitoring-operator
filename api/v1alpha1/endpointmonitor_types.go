@@ -53,7 +53,7 @@ const MaxCheckInterval = 31536000
 
 // EndpointMonitorSpec defines the desired state of EndpointMonitor
 type EndpointMonitorSpec struct {
-	// +kubebuilder:validation:Enum=http;http-json;smtp;redis;tls;tcp;dns;ping;trino;opensearch;mysql
+	// +kubebuilder:validation:Enum=http;http-json;smtp;redis;tls;tcp;dns;ping;trino;opensearch;mysql;mariadb
 	Driver   string `json:"driver"`   // ex: "opensearch", "trino", "http", "http-json"
 	Endpoint string `json:"endpoint"` // target service URL
 	// +kubebuilder:validation:Minimum=1
@@ -66,7 +66,7 @@ type EndpointMonitorSpec struct {
 	RedisCheck    *RedisCheck    `json:"redisCheck,omitempty"`    // only relevant for driver = "redis"
 	TlsCheck      *TlsCheck      `json:"tlsCheck,omitempty"`      // only relevant for driver = "tls", "http"
 	DnsCheck      *DnsCheck      `json:"dnsCheck,omitempty"`      // only relevant for driver = "dns"
-	MysqlCheck    *MysqlCheck    `json:"mysqlCheck,omitempty"`    // only relevant for driver = "mysql"
+	MysqlCheck    *MysqlCheck    `json:"mysqlCheck,omitempty"`    // only relevant for driver = "mysql", "mariadb"
 	// IpFamily set to ipv4 or ipv6 connects to the endpoint over that address
 	// family only. A pinned family connects directly, ignoring HTTP proxy
 	// settings, and redirects stay on that family. all runs each check over

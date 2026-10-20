@@ -66,6 +66,7 @@ spec:
                 - trino
                 - opensearch
                 - mysql
+                - mariadb
                 type: string
               endpoint:
                 type: string

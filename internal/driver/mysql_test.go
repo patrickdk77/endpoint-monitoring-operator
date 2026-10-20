@@ -16,6 +16,7 @@ import (
 
 	"github.com/go-sql-driver/mysql"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1 "github.com/patrickdk77/endpoint-monitoring-operator/api/v1alpha1"
 )
@@ -185,11 +186,20 @@ func TestMySQLConfig(t *testing.T) {
 }
 
 func TestMySQLDriverReportsPingFailure(t *testing.T) {
-	endpoint, _ := tcpServer(func(c net.Conn) {})(t, "tcp4")
-	d, _ := NewMYSQLDriver(endpoint, "", nil, "default", nil)
-	res, _ := d.Check()
-	if res.Success || !strings.Contains(res.Message, "MYSQL check failed: failed to ping") {
-		t.Fatalf("success=%v %s", res.Success, res.Message)
+	for _, tc := range []struct {
+		build     func(string, string, *v1.MysqlCheck, string, client.Client) (Driver, error)
+		kind      string
+		wantInMsg string
+	}{
+		{NewMYSQLDriver, "mysql", "MYSQL check failed: failed to ping"},
+		{NewMariaDBDriver, "mariadb", "MARIADB check failed: failed to ping"},
+	} {
+		endpoint, _ := tcpServer(func(c net.Conn) {})(t, "tcp4")
+		d, _ := tc.build(endpoint, "", nil, "default", nil)
+		res, _ := d.Check()
+		if res.Success || !strings.Contains(res.Message, tc.wantInMsg) || d.GetType() != tc.kind {
+			t.Fatalf("type=%s success=%v %s", d.GetType(), res.Success, res.Message)
+		}
 	}
 }
 

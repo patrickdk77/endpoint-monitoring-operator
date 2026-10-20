@@ -32,6 +32,8 @@ Traditional uptime checkers only tell you if a port is open. **Endpoint-Monitori
 | `smtp`        | Verify a smtp is listening on a port               |
 | `redis`       | Verify redis is listening and responds on a port   |
 | `tls`         | Verify tls certificate is on a port                |
+| `mysql`       | Log in, check read_only, connection count, replica lag |
+| `mariadb`     | The `mysql` checks against a MariaDB server        |
 
 Adding a new driver or notifier is only a few lines-everything is wired through a Factory pattern. :contentReference[oaicite:1]{index=1}
 
@@ -175,7 +177,7 @@ kubectl apply -f dashboard/deploy/config.yaml -f dashboard/deploy/deployment.yam
 * 🗄️ Persistent metrics export (Prometheus CRD)
 * 🕵🏻‍♂️ Synthetic transaction scripts (e.g., login + checkout)
 * 🔑 Secretless credentials via CSI Drivers
-* ➕ **New drivers:** Redis, MySQL, Kafka
+* ➕ **New drivers:** PostgreSQL, MongoDB, ScyllaDB, Kafka
 
 Feel free to open an Issue or Pull Request!
 

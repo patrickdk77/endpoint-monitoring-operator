@@ -170,6 +170,8 @@ func (f *DriverFactory) createFamilyDriver(driverType, endpoint, family string, 
 		return driver.NewOpenSearchDriver(endpoint, family)
 	case "mysql":
 		return driver.NewMYSQLDriver(endpoint, family, monitor.Spec.MysqlCheck, namespace, client)
+	case "mariadb":
+		return driver.NewMariaDBDriver(endpoint, family, monitor.Spec.MysqlCheck, namespace, client)
 	default:
 		return nil, fmt.Errorf("unsupported driver type: %s", driverType)
 	}
