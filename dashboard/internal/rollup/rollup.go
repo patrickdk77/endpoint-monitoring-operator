@@ -150,12 +150,6 @@ func (r *Runner) rollupServiceHour(ctx context.Context, dash, svc string, hour t
 		return false
 	}
 
-	for loc, lr := range aggregate.PerLocation {
-		if err := r.store.WriteLocationRollup(ctx, dash, svc, loc, hour, lr); err != nil {
-			log.Printf("rollup: write location rollup %s %s %s: %v", loc, dash, svc, err)
-		}
-	}
-
 	if err := r.store.WriteAggregateRollup(ctx, dash, svc, hour, aggregate); err != nil {
 		log.Printf("rollup: write aggregate rollup %s %s: %v", dash, svc, err)
 		return false

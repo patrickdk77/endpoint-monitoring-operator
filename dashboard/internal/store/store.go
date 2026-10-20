@@ -4,7 +4,9 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log"
 	"sort"
 	"strconv"
 	"strings"
@@ -40,11 +42,11 @@ type FailureRun struct {
 }
 
 type AggregateRollup struct {
-	Status       string                     `json:"status"`
-	Success      int                        `json:"success"`
-	Failure      int                        `json:"failure"`
-	AvgMs        float64                    `json:"avgMs"`
-	PerLocation  map[string]LocationRollup  `json:"perLocation"`
+	Status      string                    `json:"status"`
+	Success     int                       `json:"success"`
+	Failure     int                       `json:"failure"`
+	AvgMs       float64                   `json:"avgMs"`
+	PerLocation map[string]LocationRollup `json:"perLocation"`
 }
 
 type Meta struct {
@@ -59,15 +61,17 @@ type Client struct {
 }
 
 type Store struct {
-	locations map[string]*Client
-	primary   *Client
-	retention int
+	locations     map[string]*Client
+	primary       *Client
+	retention     int
+	retentionDays int
 }
 
 func New(cfg *config.Config) (*Store, error) {
 	s := &Store{
-		locations: make(map[string]*Client),
-		retention: cfg.DefaultRetentionDays * 24 * 3600,
+		locations:     make(map[string]*Client),
+		retention:     cfg.DefaultRetentionDays * 24 * 3600,
+		retentionDays: cfg.DefaultRetentionDays,
 	}
 	for _, loc := range cfg.Locations {
 		c, err := dial(loc)
@@ -106,47 +110,60 @@ func (s *Store) Close() {
 }
 
 func (s *Store) ListDashboards(ctx context.Context) ([]string, error) {
-	seen := map[string]struct{}{}
-	var out []string
-	for _, c := range s.locations {
-		items, err := c.client.Do(ctx, c.client.B().Smembers().Key(keys.Dashboards()).Build()).AsStrSlice()
-		if err != nil {
-			continue
-		}
-		for _, d := range items {
-			if _, ok := seen[d]; ok {
-				continue
-			}
-			seen[d] = struct{}{}
-			out = append(out, d)
-		}
-	}
-	return out, nil
+	return s.union(ctx, keys.Dashboards())
 }
 
 func (s *Store) ListServices(ctx context.Context, dash string) ([]string, error) {
+	return s.union(ctx, keys.Services(dash))
+}
+
+// union merges one set across every location and fails only when every
+// location does.
+func (s *Store) union(ctx context.Context, key string) ([]string, error) {
 	seen := map[string]struct{}{}
 	var out []string
-	for _, c := range s.locations {
-		items, err := c.client.Do(ctx, c.client.B().Smembers().Key(keys.Services(dash)).Build()).AsStrSlice()
+	var errs []error
+	for _, name := range s.LocationNames() {
+		c := s.locations[name]
+		items, err := c.client.Do(ctx, c.client.B().Smembers().Key(key).Build()).AsStrSlice()
 		if err != nil {
+			errs = append(errs, fmt.Errorf("location %s: %w", name, err))
 			continue
 		}
-		for _, svc := range items {
-			if _, ok := seen[svc]; ok {
+		for _, item := range items {
+			if _, ok := seen[item]; ok {
 				continue
 			}
-			seen[svc] = struct{}{}
-			out = append(out, svc)
+			seen[item] = struct{}{}
+			out = append(out, item)
 		}
+	}
+	if len(errs) == len(s.locations) {
+		return nil, fmt.Errorf("reading %s: %w", key, errors.Join(errs...))
+	}
+	for _, err := range errs {
+		log.Printf("store: reading %s: %v", key, err)
 	}
 	return out, nil
 }
 
+// GetMeta returns the first meta hash, reading the primary and then the other
+// locations by name, that names an endpoint or a driver.
 func (s *Store) GetMeta(ctx context.Context, dash, svc string) (Meta, error) {
-	for _, c := range s.locations {
+	order := []*Client{s.primary}
+	for _, name := range s.LocationNames() {
+		if c := s.locations[name]; c != s.primary {
+			order = append(order, c)
+		}
+	}
+	var errs []error
+	for _, c := range order {
 		m, err := c.client.Do(ctx, c.client.B().Hgetall().Key(keys.Meta(dash, svc)).Build()).AsStrMap()
-		if err != nil || len(m) == 0 {
+		if err != nil {
+			errs = append(errs, fmt.Errorf("location %s: %w", c.name, err))
+			continue
+		}
+		if m["endpoint"] == "" && m["driver"] == "" {
 			continue
 		}
 		return Meta{
@@ -154,6 +171,9 @@ func (s *Store) GetMeta(ctx context.Context, dash, svc string) (Meta, error) {
 			Driver:   m["driver"],
 			Name:     m["name"],
 		}, nil
+	}
+	if len(errs) > 0 {
+		return Meta{}, fmt.Errorf("meta for %s/%s: %w", dash, svc, errors.Join(errs...))
 	}
 	return Meta{}, fmt.Errorf("meta not found for %s/%s", dash, svc)
 }
@@ -306,22 +326,6 @@ func (s *Store) ComputeAggregate(ctx context.Context, dash, svc string, hour tim
 	return agg, true
 }
 
-func (s *Store) WriteLocationRollup(ctx context.Context, dash, svc, loc string, hour time.Time, rollup LocationRollup) error {
-	if rollup.Total == 0 {
-		return nil
-	}
-	data, err := json.Marshal(rollup)
-	if err != nil {
-		return err
-	}
-	field := strconv.FormatInt(hour.Unix(), 10)
-	key := keys.RollupLocationHour(dash, svc, loc)
-	if err := s.primary.client.Do(ctx, s.primary.client.B().Hset().Key(key).FieldValue().FieldValue(field, string(data)).Build()).Error(); err != nil {
-		return err
-	}
-	return s.primary.client.Do(ctx, s.primary.client.B().Expire().Key(key).Seconds(int64(s.retention)).Build()).Error()
-}
-
 func (s *Store) WriteAggregateRollup(ctx context.Context, dash, svc string, hour time.Time, rollup AggregateRollup) error {
 	data, err := json.Marshal(rollup)
 	if err != nil {
@@ -360,6 +364,25 @@ func (s *Store) GetAggregateRollups(ctx context.Context, dash, svc string, from,
 	return out, nil
 }
 
+// History holds one service's hourly aggregate rollups from the start of the
+// day retentionDays ago, with the current hour computed live from the samples.
+type History struct {
+	Hours map[int64]AggregateRollup
+}
+
+func (s *Store) History(ctx context.Context, dash, svc string, now time.Time) (History, error) {
+	from := now.AddDate(0, 0, -s.retentionDays).Truncate(24 * time.Hour)
+	hours, err := s.GetAggregateRollups(ctx, dash, svc, from, now)
+	if err != nil {
+		return History{}, err
+	}
+	cur := now.Truncate(time.Hour)
+	if agg, ok := s.ComputeAggregate(ctx, dash, svc, cur); ok {
+		hours[cur.Unix()] = agg
+	}
+	return History{Hours: hours}, nil
+}
+
 // FailureWindow is a failure incident: a run of failing samples sharing the
 // same message. It is built per location, then per-location runs that share the
 // message and overlap (or are near-concurrent) in time are merged into a single
@@ -393,8 +416,11 @@ type segment struct {
 // reporting location. Incidents are returned most-recent-first. When live is
 // true, the current hour is recomputed on the fly and a run that is still open
 // at the latest sample of the current hour is marked Ongoing.
-func (s *Store) FailureWindows(ctx context.Context, dash, svc string, from, to time.Time, live bool) []FailureWindow {
-	rollups, _ := s.GetAggregateRollups(ctx, dash, svc, from, to)
+func (s *Store) FailureWindows(ctx context.Context, dash, svc string, from, to time.Time, live bool) ([]FailureWindow, error) {
+	rollups, err := s.GetAggregateRollups(ctx, dash, svc, from, to)
+	if err != nil {
+		return nil, err
+	}
 
 	curEpoch := int64(-1)
 	curHour := time.Now().UTC().Truncate(time.Hour)
@@ -444,7 +470,7 @@ func (s *Store) FailureWindows(ctx context.Context, dash, svc string, from, to t
 		all = append(all, segs...)
 	}
 
-	return mergeSegments(all)
+	return mergeSegments(all), nil
 }
 
 // mergeSegments groups per-location runs by message and merges those whose time
@@ -500,6 +526,7 @@ func (s *Store) LocationNames() []string {
 	for name := range s.locations {
 		names = append(names, name)
 	}
+	sort.Strings(names)
 	return names
 }
 

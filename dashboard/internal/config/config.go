@@ -69,16 +69,38 @@ func (c *Config) validate() error {
 		return fmt.Errorf("at least one location is required")
 	}
 	primary := 0
+	names := map[string]bool{}
 	for _, loc := range c.Locations {
 		if loc.Name == "" || loc.Addr == "" {
 			return fmt.Errorf("each location requires name and addr")
 		}
+		if names[loc.Name] {
+			return fmt.Errorf("location name %q is used twice", loc.Name)
+		}
+		names[loc.Name] = true
 		if loc.Primary {
 			primary++
 		}
 	}
 	if primary != 1 {
 		return fmt.Errorf("exactly one location must be marked primary")
+	}
+	if c.DefaultRetentionDays < 1 {
+		return fmt.Errorf("defaultRetentionDays must be at least 1, got %d", c.DefaultRetentionDays)
+	}
+	interval, err := c.RollupDuration()
+	if err != nil {
+		return fmt.Errorf("rollupInterval: %w", err)
+	}
+	if interval <= 0 {
+		return fmt.Errorf("rollupInterval must be a positive duration, got %s", c.RollupInterval)
+	}
+	pace, err := c.BackfillPaceDuration()
+	if err != nil {
+		return fmt.Errorf("backfillPace: %w", err)
+	}
+	if pace < 0 {
+		return fmt.Errorf("backfillPace must not be negative, got %s", c.BackfillPace)
 	}
 	return nil
 }
