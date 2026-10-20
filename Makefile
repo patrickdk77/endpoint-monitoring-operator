@@ -115,13 +115,21 @@ vet: ## Run go vet against code.
 test: manifests generate fmt vet setup-envtest ## Run tests.
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test $$(go list ./... | grep -v /e2e) -coverprofile cover.out
 
-# TODO(user): To use a different vendor for e2e tests, modify the setup under 'tests/e2e'.
-# The default setup assumes Kind is pre-installed and builds/loads the Manager Docker image locally.
+# The e2e tests run on a throwaway minikube cluster that test-e2e creates and
+# deletes. Every command the tests run gets only that cluster's kubeconfig.
 # CertManager is installed by default; skip with:
 # - CERT_MANAGER_INSTALL_SKIP=true
+override E2E_PROFILE := endpoint-monitoring-operator-e2e
+override E2E_KUBECONFIG := $(CURDIR)/bin/e2e-kubeconfig
+
 .PHONY: test-e2e
-test-e2e: manifests generate fmt vet ## Run the e2e tests. Expected an isolated environment using Kind.
-	go test ./test/e2e/ -v -ginkgo.v
+test-e2e: manifests generate fmt vet ## Run the e2e tests on a throwaway minikube cluster.
+	mkdir -p $(dir $(E2E_KUBECONFIG))
+	rm -f $(E2E_KUBECONFIG)
+	export KUBECONFIG=$(E2E_KUBECONFIG) E2E_KUBECONFIG=$(E2E_KUBECONFIG); \
+	trap '$(MINIKUBE) delete -p $(E2E_PROFILE); rm -f $(E2E_KUBECONFIG)' EXIT; \
+	trap 'exit 129' HUP; trap 'exit 130' INT; trap 'exit 143' TERM; \
+	$(MINIKUBE) start -p $(E2E_PROFILE) && go test ./test/e2e/ -v -ginkgo.v
 
 .PHONY: lint
 lint: golangci-lint ## Run golangci-lint linter
@@ -224,7 +232,7 @@ $(LOCALBIN):
 
 ## Tool Binaries
 KUBECTL ?= kubectl
-KIND ?= kind
+override MINIKUBE := minikube
 KUSTOMIZE ?= $(LOCALBIN)/kustomize
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 ENVTEST ?= $(LOCALBIN)/setup-envtest
