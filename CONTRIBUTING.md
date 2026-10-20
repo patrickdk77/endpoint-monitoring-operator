@@ -12,22 +12,22 @@ It follows the Factory Design Pattern to easily support new drivers (monitoring 
 
 ## Project Structure
 
-```csharp
+```text
 api/                      # CRD schema definitions
 config/                   # Install manifests, RBAC, kustomize
 internal/
-  ├── driver/             # All drivers go here (http, dns, ping, etc.)
-  ├── notifier/           # Slack, email, etc.
+  controller/             # Core reconciliation logic
+  driver/                 # All drivers go here (http, dns, ping, etc.)
+  notifier/               # One package per notifier (slack, email, etc.)
 pkg/
-  └── factory/            # Driver/Notifier creation logic
-controllers/              # Core reconciliation logic
+  factory/                # Driver/Notifier creation logic
 dist/                     # install.yaml and release manifests
 ```
 
 
 ## Add a New Driver
 
-To monitor a new type of system (e.g., Kafka, Redis, Mongo):
+To monitor a new type of system (e.g., Kafka, PostgreSQL, MongoDB):
 
 Create a new Go file in `internal/driver/<yourdriver>.go`
 
@@ -43,27 +43,33 @@ type Driver interface {
 
 Have the constructor take the monitor's address family (`""`, `ipv4` or `ipv6`) and open every connection to the endpoint through `familyNetwork` or `httpClient` in `internal/driver/family.go`, so `spec.ipFamily` applies to the new driver.
 
+If the endpoint is a host or host:port, call `checkHostEndpoint` from `internal/driver/endpoint.go` in the constructor and add the constructor to `TestHostDriversRejectURLAndUserEndpoints`. An endpoint with `://` or `@` then fails with a fixed error instead of carrying its credentials into the check text.
+
 Add your driver to `createFamilyDriver` in `pkg/factory/factory.go`. When `ipFamily` lists both `ipv4` and `ipv6`, the factory builds it once per family.
 
 Add the driver's name to the `Enum` marker on `EndpointMonitorSpec.Driver` in `api/v1alpha1/endpointmonitor_types.go` and run `make manifests`. The API server rejects any driver name missing from that list.
 
+Add the driver to `testEndpoints` in `pkg/factory/factory_test.go`. `TestCRDDriverEnumMatchesFactory` fails for any driver in the CRD enum that is missing there.
+
 ## Add a New Notifier
 
-Want to send alerts to Discord, PagerDuty, SES?
+Want to send alerts to PagerDuty or OpsGenie?
 
-Add a new notifier in `internal/notifier/<notifier>.go`
+Add a package in `internal/notifier/<notifier>/` whose `New` takes the notifier's config struct and returns `(notifier.Notifier, error)`. Check the config in `New`. An error there stops the monitor with a CannotCheck event before any check runs.
 
 Implement the Notifier interface:
 
 ```go
 type Notifier interface {
-    SendAlert(status string, msg string) error
+    SendAlert(status string, values *NoticeValues, client client.Client) error
 }
 ```
 
-Add the config struct in `api/v1alpha1/endpointmonitor_types.go`
+`New` gets no Kubernetes client, so read any Secret in `SendAlert` with `notifier.GetSecret`.
 
-Add support in NewNotifier() in `pkg/factory/factory.go`
+Add the config struct and a field for it in `NotifyConfig` in `api/v1alpha1/endpointmonitor_types.go`, then run `make generate manifests`.
+
+Build the notifier in `CreateNotifier` in `pkg/factory/factory.go`.
 
 
 ## Code Style
