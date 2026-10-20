@@ -34,33 +34,21 @@ func AggregateFromLocations(locStatuses []LocationStatus) AggregateStatus {
 		return AggregateUnknown
 	}
 
-	nonSuccess := 0
-	outages := 0
-	degraded := 0
+	nonSuccess, outages := 0, 0
 	for _, s := range locStatuses {
 		if s != LocationSuccess {
 			nonSuccess++
 		}
-		switch s {
-		case LocationOutage:
+		if s == LocationOutage {
 			outages++
-		case LocationDegraded:
-			degraded++
 		}
 	}
 
-	allNonSuccess := nonSuccess == len(locStatuses)
-	if allNonSuccess {
+	switch {
+	case nonSuccess == len(locStatuses) && outages > 0:
 		return AggregateMajorOutage
-	}
-	if nonSuccess > 1 {
+	case outages > 0, nonSuccess > 1, nonSuccess == len(locStatuses):
 		return AggregateDegraded
-	}
-	if outages == 1 {
-		return AggregateDegraded
-	}
-	if degraded == 1 {
-		return AggregateOperational
 	}
 	return AggregateOperational
 }

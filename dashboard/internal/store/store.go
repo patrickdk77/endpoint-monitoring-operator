@@ -342,13 +342,11 @@ func aggregate(perLocation map[string]LocationRollup) AggregateRollup {
 		names = append(names, name)
 	}
 	sort.Strings(names)
-	agg := AggregateRollup{PerLocation: perLocation}
-	var locStatuses []status.LocationStatus
+	agg := AggregateRollup{PerLocation: perLocation, Status: aggregateStatus(perLocation)}
 	var totalMs float64
 	var msSamples int
 	for _, name := range names {
 		lr := perLocation[name]
-		locStatuses = append(locStatuses, status.LocationStatus(lr.Status))
 		agg.Success += lr.Success
 		agg.Failure += lr.Failure
 		if lr.Measured > 0 {
@@ -356,11 +354,18 @@ func aggregate(perLocation map[string]LocationRollup) AggregateRollup {
 			msSamples += lr.Measured
 		}
 	}
-	agg.Status = string(status.AggregateFromLocations(locStatuses))
 	if msSamples > 0 {
 		agg.AvgMs = totalMs / float64(msSamples)
 	}
 	return agg
+}
+
+func aggregateStatus(perLocation map[string]LocationRollup) string {
+	statuses := make([]status.LocationStatus, 0, len(perLocation))
+	for _, lr := range perLocation {
+		statuses = append(statuses, status.LocationFromCounts(lr.Success, lr.Failure))
+	}
+	return string(status.AggregateFromLocations(statuses))
 }
 
 // dailyRetention is how long a daily rollup is kept.
@@ -519,6 +524,9 @@ func (s *Store) GetAggregateRollups(ctx context.Context, dash, svc string, from,
 		var rollup AggregateRollup
 		if err := json.Unmarshal([]byte(val), &rollup); err != nil {
 			continue
+		}
+		if len(rollup.PerLocation) > 0 {
+			rollup.Status = aggregateStatus(rollup.PerLocation)
 		}
 		out[hourEpoch] = rollup
 	}

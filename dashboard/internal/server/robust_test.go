@@ -123,3 +123,14 @@ func TestAServiceWithRecentDataShowsItsStatus(t *testing.T) {
 		t.Fatalf("a service with a successful check this hour does not show as operational:\n%s", body)
 	}
 }
+
+func TestASingleLocationWithOneFailedCheckIsDegraded(t *testing.T) {
+	h, srv := newTestServer(t)
+	hour := time.Now().UTC().Truncate(time.Hour)
+	for i := 0; i < 60; i++ {
+		seedSample(srv, hour.Add(time.Duration(i)*time.Second), i != 30)
+	}
+	if _, body := get(t, h, "/platform"); !strings.Contains(body, `class="status status-degraded"`) {
+		t.Fatalf("one failed check in 60 at the only location does not show as degraded:\n%s", body)
+	}
+}

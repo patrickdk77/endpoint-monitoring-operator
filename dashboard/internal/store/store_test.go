@@ -151,3 +151,22 @@ func TestFailureWindowsFailsInsteadOfPanickingWhenTheRollupReadFails(t *testing.
 		t.Fatal("FailureWindows succeeded although the rollup read failed")
 	}
 }
+
+func TestStoredRollupsTakeTheirStatusFromTheirLocations(t *testing.T) {
+	st, srv := newTestStore(t, "east")
+	hour := time.Date(2026, 10, 20, 10, 0, 0, 0, time.UTC)
+	srv["east"].HSet(keys.RollupAggregateHour("platform", "api"), strconv.FormatInt(hour.Unix(), 10),
+		`{"status":"major_outage","success":119,"failure":1,"perLocation":{"east":{"total":120,"success":119,"failure":1,"status":"degraded"}}}`)
+	srv["east"].HSet(keys.RollupAggregateHour("platform", "api"), strconv.FormatInt(hour.Add(time.Hour).Unix(), 10),
+		`{"status":"degraded","success":1,"failure":1}`)
+	rollups, err := st.GetAggregateRollups(context.Background(), "platform", "api", hour, hour.Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := rollups[hour.Unix()].Status; got != "degraded" {
+		t.Fatalf("a stored hour with one failed check in 120 at its only location reads as %q, want degraded", got)
+	}
+	if got := rollups[hour.Add(time.Hour).Unix()].Status; got != "degraded" {
+		t.Fatalf("a stored hour without per-location counts reads as %q, want its stored status", got)
+	}
+}
