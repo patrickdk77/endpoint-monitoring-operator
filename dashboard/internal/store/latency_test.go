@@ -120,8 +120,8 @@ func TestRollupLatencyCountsSuccessesOnlyAndWeighsLocations(t *testing.T) {
 	rawCheck(srv["east"], hour.Add(3*time.Minute), true, 100)
 	rawCheck(srv["east"], hour.Add(4*time.Minute), false, 30000)
 	rawCheck(srv["west"], hour.Add(1*time.Minute), true, 400)
-	agg, ok := st.ComputeAggregate(context.Background(), "platform", "api", hour)
-	if !ok {
+	agg, _ := st.computeAggregate(context.Background(), "platform", "api", hour)
+	if len(agg.PerLocation) == 0 {
 		t.Fatal("no aggregate")
 	}
 	east := agg.PerLocation["east"]
@@ -272,8 +272,8 @@ func TestRollupMinAndMaxAreTheExtremes(t *testing.T) {
 	for i, ms := range []int{100, 80, 120} {
 		rawCheck(srv["east"], hour.Add(time.Duration(i+1)*time.Minute), true, ms)
 	}
-	agg, ok := st.ComputeAggregate(context.Background(), "platform", "api", hour)
-	if !ok {
+	agg, _ := st.computeAggregate(context.Background(), "platform", "api", hour)
+	if len(agg.PerLocation) == 0 {
 		t.Fatal("no aggregate")
 	}
 	if east := agg.PerLocation["east"]; east.MinMs != 80 || east.MaxMs != 120 || east.Measured != 3 {
@@ -288,8 +288,8 @@ func TestSuccessesWithoutLatencyDoNotPullTheAverageDown(t *testing.T) {
 		srv["east"].HSet(keys.StatusHour("platform", "api", hour.Unix()), strconv.FormatInt(hour.Add(time.Duration(i)*time.Minute).Unix(), 10), "s")
 	}
 	rawCheck(srv["west"], hour.Add(time.Minute), true, 400)
-	agg, ok := st.ComputeAggregate(context.Background(), "platform", "api", hour)
-	if !ok {
+	agg, _ := st.computeAggregate(context.Background(), "platform", "api", hour)
+	if len(agg.PerLocation) == 0 {
 		t.Fatal("no aggregate")
 	}
 	if agg.AvgMs != 400 {

@@ -146,3 +146,25 @@ func TestAnOutageIsNotOngoingAfterAPassOrOnceItsDataIsOld(t *testing.T) {
 		t.Fatalf("incidents %+v; want nothing ongoing once the newest data is more than 6 hours old", w)
 	}
 }
+
+func TestTheLiveHourKeepsWhatItCannotReadNow(t *testing.T) {
+	st, srv := newTestStore(t, "east", "west")
+	prev := time.Date(2026, 10, 20, 12, 0, 0, 0, time.UTC)
+	cur := prev.Add(time.Hour)
+	storeHour(t, srv["east"], prev, map[string]LocationRollup{"east": failingHour(prev, 10*time.Minute, "down")})
+	storeHour(t, srv["east"], cur, map[string]LocationRollup{"east": {Total: 3, Success: 3, Status: "success"}})
+	rawCheck(srv["west"], cur.Add(time.Minute), true, 100)
+	srv["east"].Fail("HGETALL", ":s:", "ERR east is restarting")
+	now := cur.Add(5 * time.Minute)
+
+	hist, err := st.History(context.Background(), "platform", "api", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if h := hist.Hours[cur.Unix()]; h.Success != 4 || h.PerLocation["east"].Total != 3 || len(h.Missing) != 1 {
+		t.Fatalf("the live hour = %+v; want east's three stored checks kept beside west's live one", h)
+	}
+	if w := incidents(t, st, prev, now, now, true); len(w) != 1 || w[0].Ongoing {
+		t.Fatalf("incidents %+v; want east's 12:00 outage resolved by its stored 13:00 passes", w)
+	}
+}

@@ -300,18 +300,10 @@ func splitDetail(detail string) []string {
 	return []string{detail}
 }
 
-// ComputeAggregate reads raw samples for the given hour from every location
+// computeAggregate reads raw samples for the given hour from every location
 // (read-only) and computes the per-location rollups plus the cross-location
-// aggregate status. It performs no writes. A location that could not be read
-// is listed in Missing. The bool is false when no location has any data for
-// the hour.
-func (s *Store) ComputeAggregate(ctx context.Context, dash, svc string, hour time.Time) (AggregateRollup, bool) {
-	agg, _ := s.computeAggregate(ctx, dash, svc, hour)
-	return agg, len(agg.PerLocation) > 0
-}
-
-// computeAggregate is ComputeAggregate that also returns why each missing
-// location could not be read.
+// aggregate status. A location that could not be read is listed in Missing,
+// with why in the returned map.
 func (s *Store) computeAggregate(ctx context.Context, dash, svc string, hour time.Time) (AggregateRollup, map[string]error) {
 	perLocation := make(map[string]LocationRollup)
 	var missing []string
@@ -368,6 +360,28 @@ func aggregateStatus(perLocation map[string]LocationRollup) string {
 	return string(status.AggregateFromLocations(statuses))
 }
 
+// mergeStored adds to a freshly computed hour every stored location entry
+// that counts more checks than the fresh one, as a location that could not be
+// read or whose raw samples have expired does, and sums the result again.
+func mergeStored(fresh, stored AggregateRollup) AggregateRollup {
+	for loc, lr := range stored.PerLocation {
+		if lr.Total > fresh.PerLocation[loc].Total {
+			fresh.PerLocation[loc] = lr
+		}
+	}
+	merged := aggregate(fresh.PerLocation)
+	merged.Missing = fresh.Missing
+	return merged
+}
+
+// liveHour computes the hour from the raw samples now and merges the stored
+// rollup into it. The bool is false when no location has data for the hour.
+func (s *Store) liveHour(ctx context.Context, dash, svc string, hour time.Time, stored AggregateRollup) (AggregateRollup, bool) {
+	agg, _ := s.computeAggregate(ctx, dash, svc, hour)
+	merged := mergeStored(agg, stored)
+	return merged, len(merged.PerLocation) > 0
+}
+
 // dailyRetention is how long a daily rollup is kept.
 const dailyRetention = 365 * 24 * time.Hour
 
@@ -402,25 +416,20 @@ func (s *Store) RollupHour(ctx context.Context, dash, svc string, hour, now time
 		return res, err
 	}
 	var old AggregateRollup
-	if err == nil && json.Unmarshal([]byte(stored), &old) == nil {
-		for loc, lr := range old.PerLocation {
-			if lr.Total > agg.PerLocation[loc].Total {
-				agg.PerLocation[loc] = lr
-			}
-		}
+	if err == nil && json.Unmarshal([]byte(stored), &old) != nil {
+		old = AggregateRollup{}
 	}
+	rollup := mergeStored(agg, old)
 	inProgress := now.Before(hour.Add(time.Hour))
 	placeholder := len(old.Missing) > 0 && len(old.PerLocation) == 0
-	if len(agg.PerLocation) == 0 {
-		if placeholder && len(agg.Missing) == 0 {
+	if len(rollup.PerLocation) == 0 {
+		if placeholder && len(rollup.Missing) == 0 {
 			return res, c.Do(ctx, c.B().Hdel().Key(key).Field(field).Build()).Error()
 		}
-		if len(agg.Missing) == 0 || inProgress || !mark || (placeholder && slices.Equal(old.Missing, agg.Missing)) {
+		if len(rollup.Missing) == 0 || inProgress || !mark || (placeholder && slices.Equal(old.Missing, rollup.Missing)) {
 			return res, nil
 		}
 	}
-	rollup := aggregate(agg.PerLocation)
-	rollup.Missing = agg.Missing
 	rollup.InProgress = inProgress
 	data, err := json.Marshal(rollup)
 	if err != nil {
@@ -548,7 +557,7 @@ func (s *Store) History(ctx context.Context, dash, svc string, now time.Time) (H
 		return History{}, err
 	}
 	cur := now.Truncate(time.Hour)
-	if agg, ok := s.ComputeAggregate(ctx, dash, svc, cur); ok {
+	if agg, ok := s.liveHour(ctx, dash, svc, cur, hours[cur.Unix()]); ok {
 		hours[cur.Unix()] = agg
 	}
 	days, err := s.GetDailyRollups(ctx, dash, svc, now.AddDate(0, 0, -365), now)
@@ -605,7 +614,7 @@ func (s *Store) FailureWindows(ctx context.Context, dash, svc string, from, to, 
 
 	curHour := now.Truncate(time.Hour)
 	if live && !curHour.Before(from.Truncate(time.Hour)) && !curHour.After(to) {
-		if agg, ok := s.ComputeAggregate(ctx, dash, svc, curHour); ok {
+		if agg, ok := s.liveHour(ctx, dash, svc, curHour, rollups[curHour.Unix()]); ok {
 			rollups[curHour.Unix()] = agg
 		}
 	}
