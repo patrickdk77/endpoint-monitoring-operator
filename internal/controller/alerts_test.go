@@ -135,6 +135,29 @@ var _ = Describe("EndpointMonitor alerts", func() {
 		return "Warning AlertFailed " + alert + " alert was not sent by " + notifiers + "; the operator log has the error"
 	}
 
+	It("keeps the endpoint's password and query out of alerts", func() {
+		h := newAlertHook(http.StatusNoContent)
+		m := &monitoringv1alpha1.EndpointMonitor{
+			ObjectMeta: metav1.ObjectMeta{Name: "endpoint-credentials", Namespace: "default"},
+			Spec: monitoringv1alpha1.EndpointMonitorSpec{
+				Driver:        "http",
+				Endpoint:      "http://monitor:s3cret@" + endpoint + "/health?token=t0ken",
+				CheckInterval: 60,
+				Notify: monitoringv1alpha1.NotifyConfig{Webhook: &monitoringv1alpha1.WebhookConfig{
+					Enabled: true, WebhookURL: h.URL, Contents: "{{.Endpoint}}|{{.AlertMessage}}", AlertOn: []string{"failure"},
+				}},
+			},
+		}
+		Expect(k8sClient.Create(ctx, m)).To(Succeed())
+		DeferCleanup(func() { Expect(k8sClient.Delete(ctx, m)).To(Succeed()) })
+		check(types.NamespacedName{Name: m.Name, Namespace: m.Namespace})
+		Expect(h.hits.Load()).To(BeEquivalentTo(1))
+		body := h.lastBody()
+		Expect(body).To(HavePrefix("http://monitor:***@" + endpoint + "/health|http monitor for http://monitor:***@" + endpoint + "/health is unhealthy"))
+		Expect(body).NotTo(ContainSubstring("s3cret"))
+		Expect(body).NotTo(ContainSubstring("t0ken"))
+	})
+
 	Context("when a notifier fails", func() {
 		It("still sends the change alert when the status alert fails", func() {
 			failing, changes := newAlertHook(http.StatusInternalServerError), newAlertHook(http.StatusNoContent)

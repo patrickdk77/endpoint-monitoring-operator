@@ -37,6 +37,9 @@ func newMySQLFamilyDriver(kind, endpoint, family string, check *v1.MysqlCheck, n
 	if endpoint == "" {
 		return nil, fmt.Errorf("endpoint cannot be empty")
 	}
+	if err := checkHostEndpoint(endpoint); err != nil {
+		return nil, err
+	}
 
 	var username, password string
 	if check != nil && check.SecretRef.Name != "" {

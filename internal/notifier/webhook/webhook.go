@@ -15,14 +15,23 @@ import (
 )
 
 type WebhookNotifier struct {
-	cfg *v1alpha1.WebhookConfig
+	cfg      *v1alpha1.WebhookConfig
+	contents *template.Template
 }
 
 func New(config *v1alpha1.WebhookConfig) (notifier.Notifier, error) {
 	if config == nil || !config.Enabled || config.WebhookURL == "" {
 		return nil, fmt.Errorf("invalid Webhook config")
 	}
-	return &WebhookNotifier{cfg: config}, nil
+	w := &WebhookNotifier{cfg: config}
+	if config.Contents != "" {
+		tmpl, err := template.New("contents").Parse(config.Contents)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse the contents template: %w", err)
+		}
+		w.contents = tmpl
+	}
+	return w, nil
 }
 
 func (w *WebhookNotifier) SendAlert(status string, values *notifier.NoticeValues, client client.Client) error {
@@ -36,17 +45,11 @@ func (w *WebhookNotifier) SendAlert(status string, values *notifier.NoticeValues
 	}
 
 	var req *http.Request
-	if w.cfg.Contents != "" {
-		tmpl, err := template.New("contents").Parse(w.cfg.Contents)
-		if err != nil {
-			fmt.Printf("WEBHOOK: Failed to parse Contents Template: %s\n", err)
-			return nil
-		}
+	if w.contents != nil {
 		var buf bytes.Buffer
-		err = tmpl.Execute(&buf, values)
+		err := w.contents.Execute(&buf, values)
 		if err != nil {
-			fmt.Printf("WEBHOOK: Failed to solve Contents Template: %s\n", err)
-			return nil
+			return fmt.Errorf("WEBHOOK: failed to execute the contents template: %w", err)
 		}
 
 		req, err = http.NewRequest(http.MethodPost, w.cfg.WebhookURL, io.Reader(&buf))
@@ -66,16 +69,17 @@ func (w *WebhookNotifier) SendAlert(status string, values *notifier.NoticeValues
 
 	if w.cfg.Authorization.Name != "" {
 		secret, err := notifier.GetSecret(w.cfg.Authorization.Name, values.Namespace, client)
-		if err == nil {
-			if auth, ok := secret.Data["Raw"]; ok {
-				req.Header.Add("Authorization", string(auth))
-			}
-			if auth, ok := secret.Data["Basic"]; ok {
-				req.Header.Add("Authorization", "Basic "+base64.StdEncoding.EncodeToString(auth))
-			}
-			if auth, ok := secret.Data["Bearer"]; ok {
-				req.Header.Add("Authorization", "Bearer "+string(auth))
-			}
+		if err != nil {
+			return fmt.Errorf("WEBHOOK: unable to read the authorization secret: %w", err)
+		}
+		if auth, ok := secret.Data["Raw"]; ok {
+			req.Header.Add("Authorization", string(auth))
+		}
+		if auth, ok := secret.Data["Basic"]; ok {
+			req.Header.Add("Authorization", "Basic "+base64.StdEncoding.EncodeToString(auth))
+		}
+		if auth, ok := secret.Data["Bearer"]; ok {
+			req.Header.Add("Authorization", "Bearer "+string(auth))
 		}
 	}
 
@@ -86,8 +90,8 @@ func (w *WebhookNotifier) SendAlert(status string, values *notifier.NoticeValues
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != 200 {
-		return fmt.Errorf("WEBHOOK: non-200 response from webhook: %s", resp.Status)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("WEBHOOK: non-2xx response from webhook: %s", resp.Status)
 	}
 
 	return nil

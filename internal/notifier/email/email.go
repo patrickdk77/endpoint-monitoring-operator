@@ -23,7 +23,9 @@ import (
 )
 
 type EmailNotifier struct {
-	cfg *v1alpha1.EmailConfig
+	cfg     *v1alpha1.EmailConfig
+	subject *template.Template
+	body    *template.Template
 }
 
 func New(cfg *v1alpha1.EmailConfig) (notifier.Notifier, error) {
@@ -32,6 +34,15 @@ func New(cfg *v1alpha1.EmailConfig) (notifier.Notifier, error) {
 	}
 
 	provider := strings.ToUpper(cfg.EmailProvider)
+	switch provider {
+	case "", "SMTP":
+	case "SES":
+		if cfg.From == "" {
+			return nil, fmt.Errorf("invalid email configuration: from field is required for ses")
+		}
+	default:
+		return nil, fmt.Errorf("unsupported emailProvider %q, must be smtp or ses", cfg.EmailProvider)
+	}
 	if cfg.EmailSecretRef.Name == "" && (provider == "" || provider == "SMTP") {
 		if provider == "" && cfg.Host == "" {
 			return nil, fmt.Errorf("email config is nil or missing Host or emailProvider")
@@ -48,7 +59,22 @@ func New(cfg *v1alpha1.EmailConfig) (notifier.Notifier, error) {
 		return nil, fmt.Errorf("invalid email configuration: to array is required")
 	}
 
-	return &EmailNotifier{cfg: cfg}, nil
+	e := &EmailNotifier{cfg: cfg}
+	if cfg.Subject != "" {
+		tmpl, err := template.New("subject").Parse(cfg.Subject)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse the subject template: %w", err)
+		}
+		e.subject = tmpl
+	}
+	if cfg.Body != "" {
+		tmpl, err := template.New("body").Parse(cfg.Body)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse the body template: %w", err)
+		}
+		e.body = tmpl
+	}
+	return e, nil
 }
 
 func (e *EmailNotifier) SendAlert(status string, values *notifier.NoticeValues, client client.Client) error {
@@ -57,43 +83,35 @@ func (e *EmailNotifier) SendAlert(status string, values *notifier.NoticeValues, 
 	}
 
 	var msg, subject string
-	if e.cfg.Subject == "" {
+	if e.subject == nil {
 		subject = values.AlertMessage
 	} else {
-		tmpl, err := template.New("subject").Parse(e.cfg.Subject)
-		if err != nil {
-			return fmt.Errorf("EMAIL: Failed to parse Subject Template: %s\n", err)
-		}
 		var buf bytes.Buffer
-		err = tmpl.Execute(&buf, values)
+		err := e.subject.Execute(&buf, values)
 		if err != nil {
-			return fmt.Errorf("EMAIL: Failed to solve Subject Template: %s\n", err)
+			return fmt.Errorf("failed to execute the subject template: %w", err)
 		}
 		subject = buf.String()
 	}
-	if e.cfg.Body == "" {
+	if e.body == nil {
 		msg = values.AlertMessage
 	} else {
-		tmpl, err := template.New("body").Parse(e.cfg.Body)
-		if err != nil {
-			return fmt.Errorf("EMAIL: Failed to parse Body Template: %s\n", err)
-		}
 		var buf bytes.Buffer
-		err = tmpl.Execute(&buf, values)
+		err := e.body.Execute(&buf, values)
 		if err != nil {
-			return fmt.Errorf("EMAIL: Failed to solve Body Template: %s\n", err)
+			return fmt.Errorf("failed to execute the body template: %w", err)
 		}
 		msg = buf.String()
 	}
 	provider := strings.ToUpper(e.cfg.EmailProvider)
 	if provider == "" || provider == "SMTP" {
 		if err := e.SendSMTP(subject, msg, values, client); err != nil {
-			return fmt.Errorf("EMAIL SMTP: Send failed, Returned %s\n", err)
+			return fmt.Errorf("smtp send failed: %w", err)
 		}
 	}
 	if provider == "SES" {
 		if err := e.SendSES(subject, msg, values); err != nil {
-			return fmt.Errorf("EMAIL SES: Send failed, Returned %s\n", err)
+			return fmt.Errorf("ses send failed: %w", err)
 		}
 	}
 	//fmt.Printf("EMAIL ALERT: Status=%s, To=%v, From=%s, Message=%s\n",
@@ -114,7 +132,7 @@ func (e *EmailNotifier) SendSMTP(subject string, msg string, values *notifier.No
 	if e.cfg.EmailSecretRef.Name != "" {
 		secret, err := notifier.GetSecret(e.cfg.EmailSecretRef.Name, values.Namespace, client)
 		if err != nil {
-			return fmt.Errorf("unable to read secret: %s\n", err)
+			return fmt.Errorf("unable to read secret: %w", err)
 		}
 
 		var identity, username, password string
@@ -150,7 +168,7 @@ func (e *EmailNotifier) SendSMTP(subject string, msg string, values *notifier.No
 
 	body := []byte(
 		"From: " + from + "\r\n" +
-			"To: " + from + "\r\n" +
+			"To: " + strings.Join(e.cfg.To, ", ") + "\r\n" +
 			"Date: " + time.Now().Format(time.RFC1123Z) + "\r\n" +
 			"Subject: " + escapeUTF8(subject) + "\r\n\r\n" +
 			strings.ReplaceAll(msg, "\n", "\r\n") + "\r\n")

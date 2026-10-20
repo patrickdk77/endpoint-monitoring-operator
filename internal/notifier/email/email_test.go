@@ -143,6 +143,39 @@ func TestSendSMTPDelivers(t *testing.T) {
 	if !strings.Contains(s.data, "Subject: api is down\r\n") || !strings.Contains(s.data, "\r\n\r\napi is down\r\n") {
 		t.Fatalf("message:\n%s", s.data)
 	}
+	if !strings.Contains(s.data, "To: oncall@example.test, backup@example.test\r\n") || !strings.Contains(s.data, "From: monitor@example.test\r\n") {
+		t.Fatalf("headers:\n%s", s.data)
+	}
+}
+
+func TestNewRejectsUnparsableTemplates(t *testing.T) {
+	for _, cfg := range []v1alpha1.EmailConfig{{Subject: "{{.Status"}, {Body: "{{if .Status}}"}} {
+		cfg.Enabled, cfg.Host, cfg.From, cfg.To = true, "smtp.example.test:25", "m@example.test", []string{"oncall@example.test"}
+		if _, err := New(&cfg); err == nil || !strings.Contains(err.Error(), "failed to parse the") {
+			t.Errorf("subject %q body %q: err = %v", cfg.Subject, cfg.Body, err)
+		}
+	}
+}
+
+func TestNewValidatesEmailProvider(t *testing.T) {
+	tests := []struct {
+		cfg     v1alpha1.EmailConfig
+		wantErr string
+	}{
+		{v1alpha1.EmailConfig{EmailProvider: "sendgrid", Host: "smtp.example.test:25", From: "m@example.test"}, `unsupported emailProvider "sendgrid"`},
+		{v1alpha1.EmailConfig{EmailProvider: "SES"}, "from field is required for ses"},
+		{v1alpha1.EmailConfig{EmailProvider: "ses", From: "m@example.test"}, ""},
+		{v1alpha1.EmailConfig{EmailProvider: "Smtp", Host: "smtp.example.test:25", From: "m@example.test"}, ""},
+		{v1alpha1.EmailConfig{Host: "smtp.example.test:25", From: "m@example.test"}, ""},
+	}
+	for _, tc := range tests {
+		cfg := tc.cfg
+		cfg.Enabled, cfg.To = true, []string{"oncall@example.test"}
+		_, err := New(&cfg)
+		if tc.wantErr == "" && err != nil || tc.wantErr != "" && (err == nil || !strings.Contains(err.Error(), tc.wantErr)) {
+			t.Errorf("provider %q: err = %v, want %q", tc.cfg.EmailProvider, err, tc.wantErr)
+		}
+	}
 }
 
 func TestSendSMTPGivesUpOnStalledServer(t *testing.T) {

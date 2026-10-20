@@ -251,7 +251,44 @@ var _ = Describe("EndpointMonitor Controller", func() {
 			Entry("a negative expectedStatusCode", "status-negative", "spec.httpJsonCheck.expectedStatusCode", func(s *Endpointmonitoringv1alpha1.EndpointMonitorSpec) {
 				s.HttpJsonCheck = &Endpointmonitoringv1alpha1.HttpJsonCheck{ExpectedStatusCode: -1, JsonAssertions: map[string]string{"status": "UP"}}
 			}),
+			Entry("an unknown emailProvider", "email-provider", "spec.notify.email.emailProvider", func(s *Endpointmonitoringv1alpha1.EndpointMonitorSpec) {
+				s.Notify.Email = &Endpointmonitoringv1alpha1.EmailConfig{Enabled: true, To: []string{"a@example.test"}, EmailProvider: "smpt"}
+			}),
+			Entry("an emailProvider with a space", "email-provider-space", "spec.notify.email.emailProvider", func(s *Endpointmonitoringv1alpha1.EndpointMonitorSpec) {
+				s.Notify.Email = &Endpointmonitoringv1alpha1.EmailConfig{Enabled: true, To: []string{"a@example.test"}, EmailProvider: " smtp"}
+			}),
+			Entry("ses without from", "email-ses-from", "spec.notify.email", func(s *Endpointmonitoringv1alpha1.EndpointMonitorSpec) {
+				s.Notify.Email = &Endpointmonitoringv1alpha1.EmailConfig{Enabled: true, To: []string{"a@example.test"}, EmailProvider: "SES"}
+			}),
+			Entry("valkey retentionDays 0", "valkey-retention", "spec.notify.valkey.retentionDays", func(s *Endpointmonitoringv1alpha1.EndpointMonitorSpec) {
+				zero := 0
+				s.Notify.Valkey = &Endpointmonitoringv1alpha1.ValkeyConfig{Enabled: true, Endpoint: "127.0.0.1:6379", Dashboards: []string{"prod"}, RetentionDays: &zero}
+			}),
+			Entry("a valkey dashboard with a colon", "valkey-dashboard", "spec.notify.valkey.dashboards[0]", func(s *Endpointmonitoringv1alpha1.EndpointMonitorSpec) {
+				s.Notify.Valkey = &Endpointmonitoringv1alpha1.ValkeyConfig{Enabled: true, Endpoint: "127.0.0.1:6379", Dashboards: []string{"eu:west"}}
+			}),
+			Entry("an empty valkey dashboard name", "valkey-empty-dashboard", "spec.notify.valkey.dashboards[0]", func(s *Endpointmonitoringv1alpha1.EndpointMonitorSpec) {
+				s.Notify.Valkey = &Endpointmonitoringv1alpha1.ValkeyConfig{Enabled: true, Endpoint: "127.0.0.1:6379", Dashboards: []string{""}}
+			}),
+			Entry("a valkey name with a colon", "valkey-name", "spec.notify.valkey.name", func(s *Endpointmonitoringv1alpha1.EndpointMonitorSpec) {
+				s.Notify.Valkey = &Endpointmonitoringv1alpha1.ValkeyConfig{Enabled: true, Endpoint: "127.0.0.1:6379", Dashboards: []string{"prod"}, Name: "api:v2"}
+			}),
 		)
+
+		It("accepts smtp and ses in any case, and no provider", func() {
+			for i, provider := range []string{"", "smtp", "SMTP", "Ses"} {
+				spec := validSpec()
+				spec.Notify.Email = &Endpointmonitoringv1alpha1.EmailConfig{Enabled: true, To: []string{"a@example.test"}, From: "m@example.test", EmailProvider: provider}
+				create(fmt.Sprintf("email-provider-%d", i), spec)
+			}
+		})
+
+		It("accepts a valkey notifier with plain names and a one-day retention", func() {
+			one := 1
+			spec := validSpec()
+			spec.Notify.Valkey = &Endpointmonitoringv1alpha1.ValkeyConfig{Enabled: true, Endpoint: "127.0.0.1:6379", Dashboards: []string{"prod", "eu-west"}, Name: "api-v2", RetentionDays: &one}
+			create("valkey-valid", spec)
+		})
 
 		It("accepts expectedStatusCode 0 and 100 to 599", func() {
 			for _, code := range []int{0, 100, 302, 599} {

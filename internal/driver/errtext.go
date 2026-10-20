@@ -15,7 +15,7 @@ var stableText = []struct {
 	{regexp.MustCompile(`stream ID \d+; `), ""},
 	{regexp.MustCompile(`LastStreamID=\d+, `), ""},
 	{regexp.MustCompile(`\b([A-Za-z]+ "https?://[^"?]*)\?(?:[^"\\]|\\.)*"`), `$1"`},
-	{regexp.MustCompile(`("[A-Za-z][A-Za-z0-9+.-]*://[^:@/"]*):[^@/"]*@`), `$1:***@`},
+	{regexp.MustCompile(`\b([A-Za-z][A-Za-z0-9+.-]*://[^:@/\s"]*):[^@/\s"]*@`), `$1:***@`},
 	{regexp.MustCompile(`certificate has expired or is not yet valid: current time \S+ is after (\S+)`), "certificate expired at $1"},
 	{regexp.MustCompile(`certificate has expired or is not yet valid: current time \S+ is before (\S+)`), "certificate is not valid before $1"},
 }

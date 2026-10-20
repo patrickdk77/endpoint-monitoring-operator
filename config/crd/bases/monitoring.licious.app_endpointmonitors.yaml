@@ -147,7 +147,7 @@ spec:
                     - webhookUrl
                     type: object
                   email:
-                    description: EmailConfig is placeholder (no-op for now)
+                    description: EmailConfig sends alerts by SMTP or Amazon SES.
                     properties:
                       alertOn:
                         items:
@@ -160,6 +160,7 @@ spec:
                       body:
                         type: string
                       emailProvider:
+                        pattern: ^([sS][mM][tT][pP]|[sS][eE][sS])?$
                         type: string
                       emailSecretRef:
                         properties:
@@ -184,6 +185,10 @@ spec:
                     - enabled
                     - to
                     type: object
+                    x-kubernetes-validations:
+                    - message: from is required when emailProvider is ses
+                      rule: '!has(self.emailProvider) || self.emailProvider.lowerAscii()
+                        != ''ses'' || (has(self.from) && size(self.from) > 0)'
                   slack:
                     description: SlackConfig defines Slack notifier config
                     properties:
@@ -209,6 +214,7 @@ spec:
                     properties:
                       dashboards:
                         items:
+                          pattern: ^[^:]+$
                           type: string
                         type: array
                       db:
@@ -218,8 +224,10 @@ spec:
                       endpoint:
                         type: string
                       name:
+                        pattern: ^[^:]*$
                         type: string
                       retentionDays:
+                        minimum: 1
                         type: integer
                       secretRef:
                         properties:

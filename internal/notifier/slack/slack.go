@@ -47,8 +47,8 @@ func (s *SlackNotifier) SendAlert(status string, values *notifier.NoticeValues, 
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != 200 {
-		return fmt.Errorf("non-200 response from slack: %s", resp.Status)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("non-2xx response from slack: %s", resp.Status)
 	}
 
 	return nil

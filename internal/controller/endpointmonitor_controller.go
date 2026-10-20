@@ -102,7 +102,7 @@ func (r *EndpointMonitorReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		LastStatus:     monitor.Status.LastStatus,
 		Status:         "failure",
 		Healthy:        "unhealthy",
-		Endpoint:       driver.GetEndpoint(),
+		Endpoint:       notifierTypes.DisplayEndpoint(driver.GetEndpoint()),
 		Driver:         driver.GetType(),
 		Name:           monitor.Name,
 		Message:        result.Message,

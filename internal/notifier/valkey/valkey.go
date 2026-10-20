@@ -25,8 +25,19 @@ func New(config *v1.ValkeyConfig) (notifier.Notifier, error) {
 	if len(config.Dashboards) == 0 {
 		return nil, fmt.Errorf("valkey notifier requires at least one dashboard")
 	}
+	for _, dash := range config.Dashboards {
+		if dash == "" || strings.Contains(dash, ":") {
+			return nil, fmt.Errorf("valkey dashboard name %q must not be empty or contain ':'", dash)
+		}
+	}
+	if strings.Contains(config.Name, ":") {
+		return nil, fmt.Errorf("valkey name %q must not contain ':'", config.Name)
+	}
 	retentionDays := defaultRetentionDays
 	if config.RetentionDays != nil {
+		if *config.RetentionDays < 1 {
+			return nil, fmt.Errorf("valkey retentionDays must be at least 1, got %d", *config.RetentionDays)
+		}
 		retentionDays = *config.RetentionDays
 	}
 	return &ValkeyNotifier{

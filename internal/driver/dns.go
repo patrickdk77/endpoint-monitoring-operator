@@ -21,6 +21,9 @@ func NewDNSDriver(endpoint, family string, check *v1.DnsCheck) (Driver, error) {
 	if endpoint == "" {
 		return nil, fmt.Errorf("endpoint cannot be empty")
 	}
+	if err := checkHostEndpoint(endpoint); err != nil {
+		return nil, err
+	}
 	if check == nil {
 		check = &v1.DnsCheck{}
 	}

@@ -2,6 +2,8 @@ package notifier
 
 import (
 	"context"
+	"net/url"
+	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -47,6 +49,22 @@ func ShouldAlert(allowed []string, status string) bool {
 		}
 	}
 	return false
+}
+
+func DisplayEndpoint(endpoint string) string {
+	trimmed := strings.TrimSpace(endpoint)
+	if !strings.Contains(trimmed, "://") && !strings.HasPrefix(trimmed, "//") {
+		return endpoint
+	}
+	u, err := url.Parse(trimmed)
+	if err != nil {
+		return "(invalid URL)"
+	}
+	u.RawQuery, u.ForceQuery, u.Fragment, u.RawFragment = "", false, "", ""
+	if _, ok := u.User.Password(); ok {
+		return strings.Replace(u.String(), u.User.String()+"@", u.User.Username()+":***@", 1)
+	}
+	return u.String()
 }
 
 func GetSecret(name string, namespace string, client client.Client) (*corev1.Secret, error) {

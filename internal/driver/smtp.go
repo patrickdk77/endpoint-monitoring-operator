@@ -31,6 +31,9 @@ func NewSMTPDriver(endpoint, family string, check *v1.SmtpCheck, namespace strin
 	if endpoint == "" {
 		return nil, fmt.Errorf("endpoint cannot be empty")
 	}
+	if err := checkHostEndpoint(endpoint); err != nil {
+		return nil, err
+	}
 	if check == nil {
 		check = &v1.SmtpCheck{}
 	}

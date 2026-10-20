@@ -120,14 +120,17 @@ type NotifyConfig struct {
 
 // ValkeyConfig defines Valkey status-page notifier config
 type ValkeyConfig struct {
-	Enabled       bool      `json:"enabled"`
-	Endpoint      string    `json:"endpoint"`
-	Tls           bool      `json:"tls,omitempty"`
-	SecretRef     SecretRef `json:"secretRef,omitempty"`
-	Dashboards    []string  `json:"dashboards"`
-	Name          string    `json:"name,omitempty"` // overrides the monitor name used as the service identity in Valkey; keep consistent across locations to aggregate the same service
-	RetentionDays *int      `json:"retentionDays,omitempty"`
-	DB            int       `json:"db,omitempty"`
+	Enabled   bool      `json:"enabled"`
+	Endpoint  string    `json:"endpoint"`
+	Tls       bool      `json:"tls,omitempty"`
+	SecretRef SecretRef `json:"secretRef,omitempty"`
+	// +kubebuilder:validation:items:Pattern=`^[^:]+$`
+	Dashboards []string `json:"dashboards"`
+	// +kubebuilder:validation:Pattern=`^[^:]*$`
+	Name string `json:"name,omitempty"` // overrides the monitor name used as the service identity in Valkey; keep consistent across locations to aggregate the same service
+	// +kubebuilder:validation:Minimum=1
+	RetentionDays *int `json:"retentionDays,omitempty"`
+	DB            int  `json:"db,omitempty"`
 }
 
 // WebhookConfig defines Webhook notifier config
@@ -149,12 +152,14 @@ type SlackConfig struct {
 	AlertOn []string `json:"alertOn,omitempty"` // values: "success", "failure", "change"
 }
 
-// EmailConfig is placeholder (no-op for now)
+// EmailConfig sends alerts by SMTP or Amazon SES.
+// +kubebuilder:validation:XValidation:rule="!has(self.emailProvider) || self.emailProvider.lowerAscii() != 'ses' || (has(self.from) && size(self.from) > 0)",message="from is required when emailProvider is ses"
 type EmailConfig struct {
-	Enabled        bool      `json:"enabled"`
-	From           string    `json:"from,omitempty"`
-	To             []string  `json:"to"`
-	EmailProvider  string    `json:"emailProvider,omitempty"` // e.g., "ses", "smtp"
+	Enabled bool     `json:"enabled"`
+	From    string   `json:"from,omitempty"`
+	To      []string `json:"to"`
+	// +kubebuilder:validation:Pattern=`^([sS][mM][tT][pP]|[sS][eE][sS])?$`
+	EmailProvider  string    `json:"emailProvider,omitempty"` // "smtp" (the default) or "ses", in any case
 	EmailSecretRef SecretRef `json:"emailSecretRef,omitempty"`
 	Host           string    `json:"host,omitempty"`    // Host:Port
 	Subject        string    `json:"subject,omitempty"` // subject template
