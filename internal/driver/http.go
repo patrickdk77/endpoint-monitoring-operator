@@ -1,6 +1,7 @@
 package driver
 
 import (
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"net/http"
@@ -23,9 +24,20 @@ func NewHTTPDriver(endpoint, family string, check *v1.TlsCheck, httpCheck *v1.Ht
 		return nil, fmt.Errorf("endpoint cannot be empty")
 	}
 
+	client := httpClient(family, 30*time.Second)
+	if check != nil && check.Host != "" {
+		transport, ok := client.Transport.(*http.Transport)
+		if !ok {
+			transport = http.DefaultTransport.(*http.Transport).Clone()
+		}
+		transport.TLSClientConfig = &tls.Config{ServerName: check.Host}
+		transport.DisableKeepAlives = true
+		client.Transport = transport
+	}
+
 	return &HTTPDriver{
 		endpoint:  endpoint,
-		client:    httpClient(family, 30*time.Second),
+		client:    client,
 		check:     check,
 		httpCheck: httpCheck,
 	}, nil
@@ -53,9 +65,6 @@ func (h *HTTPDriver) Check() (*CheckResult, error) {
 			if days := int(time.Until(notAfter).Hours() / 24); days < h.check.DaysToExpire {
 				err = fmt.Errorf("certificate expires at %s, within the %d-day alert window", notAfter.UTC().Format(time.RFC3339), h.check.DaysToExpire)
 			}
-		}
-		if err == nil && h.check.Host != "" {
-			err = resp.TLS.PeerCertificates[0].VerifyHostname(h.check.Host)
 		}
 	}
 

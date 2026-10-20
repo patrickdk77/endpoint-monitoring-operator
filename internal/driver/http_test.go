@@ -1,6 +1,7 @@
 package driver
 
 import (
+	"crypto/tls"
 	"fmt"
 	"net"
 	"net/http"
@@ -286,5 +287,94 @@ func TestPingDriverEndpointWithPort(t *testing.T) {
 				t.Fatalf("ping of %s: success=%v %s", endpoint, res.Success, res.Message)
 			}
 		})
+	}
+}
+
+func httpsServer(t *testing.T, cert tls.Certificate) (string, chan string) {
+	t.Helper()
+	sni := make(chan string, 4)
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	srv.TLS = &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		GetConfigForClient: func(hello *tls.ClientHelloInfo) (*tls.Config, error) {
+			select {
+			case sni <- hello.ServerName:
+			default:
+			}
+			return nil, nil
+		},
+	}
+	srv.StartTLS()
+	t.Cleanup(srv.Close)
+	return srv.URL, sni
+}
+
+func TestHTTPDriverTlsCheckHost(t *testing.T) {
+	tests := []struct {
+		name      string
+		cert      tls.Certificate
+		family    string
+		check     *v1.TlsCheck
+		wantOK    bool
+		wantInMsg string
+		wantSNI   string
+	}{
+		{"certificate for tlsCheck.host", nameOnlyCert, "", &v1.TlsCheck{Host: "tls-host.test"}, true, "HTTP check successful", "tls-host.test"},
+		{"certificate for tlsCheck.host over a pinned family", nameOnlyCert, FamilyIPv4, &v1.TlsCheck{Host: "tls-host.test"}, true, "HTTP check successful", "tls-host.test"},
+		{"certificate for another name than the endpoint", nameOnlyCert, "", &v1.TlsCheck{}, false,
+			"x509: cannot validate certificate for 127.0.0.1 because it doesn't contain any IP SANs", ""},
+		{"tlsCheck.host not on the certificate", testCert, "", &v1.TlsCheck{Host: "other.test"}, false,
+			"x509: certificate is valid for localhost, not other.test", "other.test"},
+		{"certificate for the endpoint", testCert, "", &v1.TlsCheck{}, true, "HTTP check successful", ""},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			url, sni := httpsServer(t, tc.cert)
+			d, _ := NewHTTPDriver(url, tc.family, tc.check, nil)
+			res, _ := d.Check()
+			if res.Success != tc.wantOK || !strings.Contains(res.Message, tc.wantInMsg) {
+				t.Fatalf("success=%v %s", res.Success, res.Message)
+			}
+			select {
+			case got := <-sni:
+				if got != tc.wantSNI {
+					t.Fatalf("SNI %q, want %q", got, tc.wantSNI)
+				}
+			default:
+				t.Fatal("the server saw no ClientHello")
+			}
+		})
+	}
+	if cfg := http.DefaultTransport.(*http.Transport).TLSClientConfig; cfg != nil && cfg.ServerName != "" {
+		t.Fatalf("http.DefaultTransport was given ServerName %q", cfg.ServerName)
+	}
+}
+
+func TestHTTPDriverTlsCheckHostLeavesNoConnectionOpen(t *testing.T) {
+	var open atomic.Int64
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	srv.TLS = &tls.Config{Certificates: []tls.Certificate{nameOnlyCert}}
+	srv.Config.ConnState = func(c net.Conn, state http.ConnState) {
+		switch state {
+		case http.StateNew:
+			open.Add(1)
+		case http.StateClosed, http.StateHijacked:
+			open.Add(-1)
+		}
+	}
+	srv.StartTLS()
+	t.Cleanup(srv.Close)
+	for i := 0; i < 4; i++ {
+		d, _ := NewHTTPDriver(srv.URL, "", &v1.TlsCheck{Host: "tls-host.test"}, nil)
+		if res, _ := d.Check(); !res.Success {
+			t.Fatalf("check %d: %s", i, res.Message)
+		}
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for open.Load() != 0 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if n := open.Load(); n != 0 {
+		t.Fatalf("%d connections still open after the checks", n)
 	}
 }
