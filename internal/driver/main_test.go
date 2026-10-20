@@ -17,20 +17,20 @@ import (
 	"time"
 )
 
-var testCert tls.Certificate
+var testCert, nameOnlyCert tls.Certificate
 
-func TestMain(m *testing.M) {
+func selfSigned(name string, lifetime time.Duration, dnsNames []string, ips []net.IP) tls.Certificate {
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		panic(err)
 	}
 	tmpl := &x509.Certificate{
 		SerialNumber:          big.NewInt(1),
-		Subject:               pkix.Name{CommonName: "driver-test"},
+		Subject:               pkix.Name{CommonName: name},
 		NotBefore:             time.Now().Add(-time.Hour),
-		NotAfter:              time.Now().Add(24 * time.Hour),
-		DNSNames:              []string{"localhost"},
-		IPAddresses:           []net.IP{net.ParseIP("127.0.0.1"), net.ParseIP("::1")},
+		NotAfter:              time.Now().Add(lifetime),
+		DNSNames:              dnsNames,
+		IPAddresses:           ips,
 		IsCA:                  true,
 		BasicConstraintsValid: true,
 		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageDigitalSignature,
@@ -40,14 +40,23 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		panic(err)
 	}
-	testCert = tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key}
+	return tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key}
+}
+
+func TestMain(m *testing.M) {
+	testCert = selfSigned("driver-test", 24*time.Hour, []string{"localhost"}, []net.IP{net.ParseIP("127.0.0.1"), net.ParseIP("::1")})
+	nameOnlyCert = selfSigned("tls-host.test", 90*24*time.Hour, []string{"tls-host.test"}, nil)
 
 	dir, err := os.MkdirTemp("", "driver-test-roots")
 	if err != nil {
 		panic(err)
 	}
 	roots := filepath.Join(dir, "roots.pem")
-	if err := os.WriteFile(roots, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0o600); err != nil {
+	var pemRoots []byte
+	for _, c := range []tls.Certificate{testCert, nameOnlyCert} {
+		pemRoots = append(pemRoots, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: c.Certificate[0]})...)
+	}
+	if err := os.WriteFile(roots, pemRoots, 0o600); err != nil {
 		panic(err)
 	}
 	os.Setenv("SSL_CERT_FILE", roots)

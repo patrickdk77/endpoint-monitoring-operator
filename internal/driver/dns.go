@@ -21,6 +21,9 @@ func NewDNSDriver(endpoint, family string, check *v1.DnsCheck) (Driver, error) {
 	if endpoint == "" {
 		return nil, fmt.Errorf("endpoint cannot be empty")
 	}
+	if check == nil {
+		check = &v1.DnsCheck{}
+	}
 
 	return &DNSDriver{endpoint: endpoint, family: family, check: check}, nil
 }
@@ -32,7 +35,7 @@ func (d *DNSDriver) Check() (*CheckResult, error) {
 
 	var err error = nil
 	var resolver *net.Resolver
-	if d.check == nil || d.check.Server == "" { // Use default dns resolver
+	if d.check.Server == "" { // Use default dns resolver
 		resolver = &net.Resolver{
 			PreferGo: true,
 			Dial:     nil,
@@ -41,47 +44,36 @@ func (d *DNSDriver) Check() (*CheckResult, error) {
 			resolver.Dial = familyDial(d.family)
 		}
 	} else {
-		var hostPart string
-		var port string
-		hostPart, port, err = net.SplitHostPort(d.check.Server)
-		if err != nil {
-			hostPart = d.check.Server
-			port = ""
-			err = nil
+		defaultPort := "53"
+		if d.check.Tls {
+			defaultPort = "853"
+		}
+		hostPart, port := hostPort(d.check.Server, defaultPort)
+		var host []string
+		host, err = net.DefaultResolver.LookupHost(ctx, hostPart) // We need to specify the dns server by ip address, so make sure
+		var addr string
+		if err == nil {
+			addr, err = pickFamily(host, d.family)
 		}
 		if err == nil {
-			if port == "" {
-				port = "53"
-				if d.check.Tls {
-					port = "853"
+			server := net.JoinHostPort(addr, port)
+			if d.check.Tls { // use DNSoverTLS server
+				tlsConfig := &tls.Config{ServerName: hostPart}
+				resolver = &net.Resolver{
+					PreferGo: true,
+					Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
+						dialer := &net.Dialer{Timeout: 10 * time.Second}
+						tlsDialer := &tls.Dialer{NetDialer: dialer, Config: tlsConfig}
+						return tlsDialer.DialContext(ctx, familyNetwork("tcp", d.family), server)
+					},
 				}
-			}
-			var host []string
-			host, err = net.DefaultResolver.LookupHost(ctx, hostPart) // We need to specify the dns server by ip address, so make sure
-			var addr string
-			if err == nil {
-				addr, err = pickFamily(host, d.family)
-			}
-			if err == nil {
-				server := net.JoinHostPort(addr, port)
-				if d.check.Tls { // use DNSoverTLS server
-					tlsConfig := &tls.Config{ServerName: hostPart}
-					resolver = &net.Resolver{
-						PreferGo: true,
-						Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
-							dialer := &net.Dialer{Timeout: 10 * time.Second}
-							tlsDialer := &tls.Dialer{NetDialer: dialer, Config: tlsConfig}
-							return tlsDialer.DialContext(ctx, familyNetwork(network, d.family), server)
-						},
-					}
-				} else { // Use normal specific dns server
-					resolver = &net.Resolver{
-						PreferGo: true,
-						Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
-							dialer := &net.Dialer{Timeout: 10 * time.Second}
-							return dialer.DialContext(ctx, familyNetwork(network, d.family), server)
-						},
-					}
+			} else { // Use normal specific dns server
+				resolver = &net.Resolver{
+					PreferGo: true,
+					Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
+						dialer := &net.Dialer{Timeout: 10 * time.Second}
+						return dialer.DialContext(ctx, familyNetwork(network, d.family), server)
+					},
 				}
 			}
 		}
@@ -107,7 +99,7 @@ func (d *DNSDriver) Check() (*CheckResult, error) {
 			var value string
 			value, err = resolver.LookupCNAME(ctx, d.endpoint)
 			if err == nil && d.check.Verify != "" {
-				if value != d.check.Verify {
+				if !sameName(value, d.check.Verify) {
 					err = fmt.Errorf("returned dns result did not match Verify value")
 				}
 			}
@@ -117,7 +109,7 @@ func (d *DNSDriver) Check() (*CheckResult, error) {
 			if err == nil && d.check.Verify != "" {
 				match := false
 				for _, val := range values {
-					if val == d.check.Verify {
+					if sameName(val, d.check.Verify) {
 						match = true
 					}
 				}
@@ -189,6 +181,10 @@ func (d *DNSDriver) Check() (*CheckResult, error) {
 	result.Message = fmt.Sprintf("DNS check successful (response time: %v)", duration)
 
 	return result, nil
+}
+
+func sameName(a, b string) bool {
+	return strings.EqualFold(strings.TrimSuffix(a, "."), strings.TrimSuffix(b, "."))
 }
 
 func (d *DNSDriver) GetEndpoint() string {

@@ -20,41 +20,36 @@ func NewTLSDriver(endpoint, family string, check *v1.TlsCheck) (Driver, error) {
 	if endpoint == "" {
 		return nil, fmt.Errorf("endpoint cannot be empty")
 	}
+	if check == nil {
+		check = &v1.TlsCheck{}
+	}
 
 	return &TLSDriver{endpoint: endpoint, family: family, check: check}, nil
+}
+
+func (t *TLSDriver) target() (addr, serverName, port string) {
+	host, port := hostPort(t.endpoint, "443")
+	serverName = host
+	if t.check.Host != "" {
+		serverName = t.check.Host
+	}
+	return net.JoinHostPort(host, port), serverName, port
 }
 
 func (t *TLSDriver) Check() (*CheckResult, error) {
 	start := time.Now()
 
+	addr, serverName, port := t.target()
 	dialer := &net.Dialer{Timeout: 10 * time.Second}
-	conn, err := tls.DialWithDialer(dialer, familyNetwork("tcp", t.family), t.endpoint, nil)
-	if err == nil {
-		hostPart, _, errSplit := net.SplitHostPort(t.endpoint)
-		if errSplit != nil {
-			hostPart = t.endpoint
-		}
-		if t.check.Host != "" {
-			hostPart = t.check.Host
-		}
-		err = conn.VerifyHostname(hostPart)
-	}
+	conn, err := tls.DialWithDialer(dialer, familyNetwork("tcp", t.family), addr, &tls.Config{ServerName: serverName})
 	if err == nil && t.check.DaysToExpire > 0 {
 		days := int(time.Until(conn.ConnectionState().PeerCertificates[0].NotAfter).Hours() / 24)
 		if days < t.check.DaysToExpire {
-			err = fmt.Errorf("cerificate expires in %d days, alert at under %d", days, t.check.DaysToExpire)
+			err = fmt.Errorf("certificate expires in %d days, alert at under %d", days, t.check.DaysToExpire)
 		}
 	}
 	if err == nil {
-		hostPart, portPart, errSplit := net.SplitHostPort(t.endpoint)
-		if errSplit != nil {
-			hostPart = t.endpoint
-			portPart = "443"
-		}
-		if t.check.Host != "" {
-			hostPart = t.check.Host
-		}
-		err = common.ResolveAndVerifyDANE(hostPart, portPart, conn.ConnectionState().PeerCertificates)
+		err = common.ResolveAndVerifyDANE(serverName, port, conn.ConnectionState().PeerCertificates)
 	}
 	if conn != nil {
 		defer conn.Close()
