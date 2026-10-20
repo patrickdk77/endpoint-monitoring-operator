@@ -460,10 +460,10 @@ func TestBothFamilies(t *testing.T) {
 		wantMsg  string
 	}{
 		{"both up", ok(10, "up4"), ok(30, "up6"), true, nil, "", 30 * time.Millisecond, "ipv4: up4; ipv6: up6"},
-		{"ipv4 down", bad(5, "down4", errV4), ok(30, "up6"), false, []error{errV4}, "ipv4: v4 down", 30 * time.Millisecond, "ipv4: down4; ipv6: up6"},
-		{"ipv6 down", ok(10, "up4"), bad(50, "down6", errV6), false, []error{errV6}, "ipv6: v6 down", 50 * time.Millisecond, "ipv4: up4; ipv6: down6"},
+		{"ipv4 down", bad(5, "down4", errV4), ok(30, "up6"), false, []error{errV4}, "ipv4: v4 down", 30 * time.Millisecond, "ipv4: down4; ipv6: ok"},
+		{"ipv6 down", ok(10, "up4"), bad(50, "down6", errV6), false, []error{errV6}, "ipv6: v6 down", 50 * time.Millisecond, "ipv4: ok; ipv6: down6"},
 		{"both down", bad(5, "down4", errV4), bad(7, "down6", errV6), false, []error{errV4, errV6}, "ipv4: v4 down\nipv6: v6 down", 7 * time.Millisecond, "ipv4: down4; ipv6: down6"},
-		{"failure without an error", bad(5, "status 500", nil), ok(1, "up6"), false, nil, "ipv4: status 500", 5 * time.Millisecond, "ipv4: status 500; ipv6: up6"},
+		{"failure without an error", bad(5, "status 500", nil), ok(1, "up6"), false, nil, "ipv4: status 500", 5 * time.Millisecond, "ipv4: status 500; ipv6: ok"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -523,7 +523,7 @@ func TestBothFamiliesAgainstSingleStackEndpoint(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.Success || !waitAccepted(&n) || n.Load() != 1 || !strings.Contains(res.Message, "ipv4: TCP check successful") || !strings.Contains(res.Message, "ipv6: TCP check failed") {
+	if res.Success || !waitAccepted(&n) || n.Load() != 1 || !strings.HasPrefix(res.Message, "ipv4: ok; ipv6: TCP check failed") {
 		t.Fatalf("success=%v accepted=%d %s", res.Success, n.Load(), res.Message)
 	}
 }

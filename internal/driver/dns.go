@@ -173,7 +173,7 @@ func (d *DNSDriver) Check() (*CheckResult, error) {
 	if err != nil {
 		result.Success = false
 		result.Error = err
-		result.Message = fmt.Sprintf("DNS check failed: %v", err)
+		result.Message = fmt.Sprintf("DNS check failed: %s", errorText(err))
 		return result, nil
 	}
 

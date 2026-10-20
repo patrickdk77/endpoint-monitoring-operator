@@ -57,7 +57,7 @@ func (h *HTTPJSONDriver) Check() (*CheckResult, error) {
 	if err != nil {
 		result.Success = false
 		result.Error = err
-		result.Message = fmt.Sprintf("HTTP-JSON request failed: %v", err)
+		result.Message = fmt.Sprintf("HTTP-JSON request failed: %s", errorText(err))
 		return result, nil
 	}
 	if resp != nil {

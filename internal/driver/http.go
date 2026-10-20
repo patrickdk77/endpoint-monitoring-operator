@@ -49,9 +49,9 @@ func (h *HTTPDriver) Check() (*CheckResult, error) {
 
 	if err == nil && resp != nil && resp.TLS != nil && h.check != nil && len(resp.TLS.PeerCertificates) > 0 {
 		if h.check.DaysToExpire > 0 {
-			days := int(time.Until(resp.TLS.PeerCertificates[0].NotAfter).Hours() / 24)
-			if days < h.check.DaysToExpire {
-				err = fmt.Errorf("certificate expires in %d days, alert at under %d", days, h.check.DaysToExpire)
+			notAfter := resp.TLS.PeerCertificates[0].NotAfter
+			if days := int(time.Until(notAfter).Hours() / 24); days < h.check.DaysToExpire {
+				err = fmt.Errorf("certificate expires at %s, within the %d-day alert window", notAfter.UTC().Format(time.RFC3339), h.check.DaysToExpire)
 			}
 		}
 		if err == nil && h.check.Host != "" {
@@ -66,7 +66,7 @@ func (h *HTTPDriver) Check() (*CheckResult, error) {
 	if err != nil {
 		result.Success = false
 		result.Error = err
-		result.Message = fmt.Sprintf("HTTP check failed: %v", err)
+		result.Message = fmt.Sprintf("HTTP check failed: %s", errorText(err))
 		return result, nil
 	}
 
@@ -76,7 +76,7 @@ func (h *HTTPDriver) Check() (*CheckResult, error) {
 			if err != nil && !errors.Is(err, errBodyTooLarge) {
 				result.Success = false
 				result.Error = err
-				result.Message = fmt.Sprintf("HTTP check failed to read body: %v", err)
+				result.Message = fmt.Sprintf("HTTP check failed to read body: %s", errorText(err))
 				return result, nil
 			}
 			if !strings.Contains(string(bodyBytes), h.httpCheck.BodyContains) {

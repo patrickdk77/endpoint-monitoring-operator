@@ -148,7 +148,7 @@ func (t *SMTPDriver) Check() (*CheckResult, error) {
 	if err != nil {
 		result.Success = false
 		result.Error = err
-		result.Message = fmt.Sprintf("SMTP check failed: %v", err)
+		result.Message = fmt.Sprintf("SMTP check failed: %s", errorText(err))
 		return result, nil
 	}
 

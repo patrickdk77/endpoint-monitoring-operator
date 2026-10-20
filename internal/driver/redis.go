@@ -108,7 +108,7 @@ func (t *REDISDriver) Check() (*CheckResult, error) {
 	if err != nil {
 		result.Success = false
 		result.Error = err
-		result.Message = fmt.Sprintf("REDIS check failed: %v", err)
+		result.Message = fmt.Sprintf("REDIS check failed: %s", errorText(err))
 		return result, nil
 	}
 

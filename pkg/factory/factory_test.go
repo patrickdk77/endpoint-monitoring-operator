@@ -86,7 +86,7 @@ func TestCreateDriverAllChecksBothFamilies(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.Success || !strings.HasPrefix(res.Message, "ipv4: TCP check successful") || !strings.Contains(res.Message, "; ipv6: TCP check failed") {
+	if res.Success || !strings.HasPrefix(res.Message, "ipv4: ok; ipv6: TCP check failed") {
 		t.Fatalf("success=%v %s", res.Success, res.Message)
 	}
 	if d.GetType() != "tcp" || d.GetEndpoint() != m.Spec.Endpoint {

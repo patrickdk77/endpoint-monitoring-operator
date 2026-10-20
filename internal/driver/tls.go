@@ -43,9 +43,9 @@ func (t *TLSDriver) Check() (*CheckResult, error) {
 	dialer := &net.Dialer{Timeout: 10 * time.Second}
 	conn, err := tls.DialWithDialer(dialer, familyNetwork("tcp", t.family), addr, &tls.Config{ServerName: serverName})
 	if err == nil && t.check.DaysToExpire > 0 {
-		days := int(time.Until(conn.ConnectionState().PeerCertificates[0].NotAfter).Hours() / 24)
-		if days < t.check.DaysToExpire {
-			err = fmt.Errorf("certificate expires in %d days, alert at under %d", days, t.check.DaysToExpire)
+		notAfter := conn.ConnectionState().PeerCertificates[0].NotAfter
+		if days := int(time.Until(notAfter).Hours() / 24); days < t.check.DaysToExpire {
+			err = fmt.Errorf("certificate expires at %s, within the %d-day alert window", notAfter.UTC().Format(time.RFC3339), t.check.DaysToExpire)
 		}
 	}
 	if err == nil {
@@ -64,7 +64,7 @@ func (t *TLSDriver) Check() (*CheckResult, error) {
 	if err != nil {
 		result.Success = false
 		result.Error = err
-		result.Message = fmt.Sprintf("TLS check failed: %v", err)
+		result.Message = fmt.Sprintf("TLS check failed: %s", errorText(err))
 		return result, nil
 	}
 

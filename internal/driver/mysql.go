@@ -77,7 +77,7 @@ func (m *MYSQLDriver) Check() (*CheckResult, error) {
 	if err != nil {
 		result.Success = false
 		result.Error = err
-		result.Message = fmt.Sprintf("%s check failed: %v", strings.ToUpper(m.kind), err)
+		result.Message = fmt.Sprintf("%s check failed: %s", strings.ToUpper(m.kind), errorText(err))
 		return result, nil
 	}
 
@@ -106,9 +106,9 @@ func (m *MYSQLDriver) config() *mysql.Config {
 	cfg.Passwd = m.password
 	cfg.Net = familyNetwork("tcp", m.family)
 	cfg.Addr = net.JoinHostPort(hostPart, port)
-	cfg.Timeout = checkTimeout
-	cfg.ReadTimeout = checkTimeout
-	cfg.WriteTimeout = checkTimeout
+	cfg.Timeout = 2 * checkTimeout
+	cfg.ReadTimeout = 2 * checkTimeout
+	cfg.WriteTimeout = 2 * checkTimeout
 	return cfg
 }
 
@@ -126,7 +126,7 @@ func checkMySQL(ctx context.Context, db *sql.DB, check *v1.MysqlCheck) error {
 		return fmt.Errorf("failed to get max_connections: %w", err)
 	}
 	if maxConnections > 0 && float64(threads)/float64(maxConnections) > 0.90 {
-		return fmt.Errorf("threads_connected (%d) exceeds 90%% of max_connections (%d)", threads, maxConnections)
+		return fmt.Errorf("threads_connected exceeds 90%% of max_connections (%d)", maxConnections)
 	}
 
 	var varName, readOnlyValue string
@@ -214,7 +214,7 @@ func checkReplication(ctx context.Context, db *sql.DB, maxBehind int) error {
 		return fmt.Errorf("%s is %q: %w", name, behind.String, err)
 	}
 	if seconds > maxBehind {
-		return fmt.Errorf("%s (%d) exceeds max allowed (%d)", name, seconds, maxBehind)
+		return fmt.Errorf("%s exceeds max allowed (%d)", name, maxBehind)
 	}
 	return nil
 }

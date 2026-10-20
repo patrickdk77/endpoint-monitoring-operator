@@ -72,7 +72,7 @@ func (o *OpenSearchDriver) Check() (*CheckResult, error) {
 	if err != nil {
 		result.Success = false
 		result.Error = err
-		result.Message = fmt.Sprintf("OpenSearch check failed: %v", err)
+		result.Message = fmt.Sprintf("OpenSearch check failed: %s", errorText(err))
 		return result, nil
 	}
 
@@ -90,7 +90,7 @@ func (o *OpenSearchDriver) Check() (*CheckResult, error) {
 	if err != nil {
 		result.Success = false
 		result.Error = err
-		result.Message = fmt.Sprintf("OpenSearch check failed to parse response: %v", err)
+		result.Message = fmt.Sprintf("OpenSearch check failed to parse response: %s", errorText(err))
 		return result, nil
 	}
 

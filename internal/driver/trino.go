@@ -54,7 +54,7 @@ func (t *TrinoDriver) Check() (*CheckResult, error) {
 	if err != nil {
 		result.Success = false
 		result.Error = err
-		result.Message = fmt.Sprintf("Trino check failed: %v", err)
+		result.Message = fmt.Sprintf("Trino check failed: %s", errorText(err))
 		return result, nil
 	}
 
@@ -74,7 +74,7 @@ func (t *TrinoDriver) Check() (*CheckResult, error) {
 	if err != nil {
 		result.Success = false
 		result.Error = err
-		result.Message = fmt.Sprintf("Trino check failed to parse response: %v", err)
+		result.Message = fmt.Sprintf("Trino check failed to parse response: %s", errorText(err))
 		return result, nil
 	}
 

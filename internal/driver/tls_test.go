@@ -40,10 +40,10 @@ func TestTLSDriver(t *testing.T) {
 		{"tlsCheck.host not on the certificate", testCert, &v1.TlsCheck{Host: "other.test"}, false,
 			"x509: certificate is valid for localhost, not other.test", "other.test"},
 		{"expires within daysToExpire", testCert, &v1.TlsCheck{DaysToExpire: 1}, false,
-			"TLS check failed: certificate expires in 0 days, alert at under 1", ""},
+			"TLS check failed: certificate expires at " + notAfter(t, testCert) + ", within the 1-day alert window", ""},
 		{"expires after daysToExpire", nameOnlyCert, &v1.TlsCheck{Host: "tls-host.test", DaysToExpire: 89}, true, "TLS check successful", "tls-host.test"},
 		{"expires at daysToExpire", nameOnlyCert, &v1.TlsCheck{Host: "tls-host.test", DaysToExpire: 90}, false,
-			"TLS check failed: certificate expires in 89 days, alert at under 90", "tls-host.test"},
+			"TLS check failed: certificate expires at " + notAfter(t, nameOnlyCert) + ", within the 90-day alert window", "tls-host.test"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

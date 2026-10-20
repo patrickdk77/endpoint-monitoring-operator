@@ -117,7 +117,7 @@ func TestCheckMySQL(t *testing.T) {
 		{"primary with an empty mysqlCheck", nil, healthyServer("OFF"), &v1.MysqlCheck{}, ""},
 		{"ping fails", errors.New("connection refused"), healthyServer("OFF"), nil, "failed to ping: connection refused"},
 		{"connections near the limit", nil, with(healthyServer("OFF"), "SHOW GLOBAL STATUS LIKE 'Threads_connected'", variable("Threads_connected", "140")), nil,
-			"threads_connected (140) exceeds 90% of max_connections (151)"},
+			"threads_connected exceeds 90% of max_connections (151)"},
 		{"connections at 90 percent", nil, with(with(healthyServer("OFF"), "SHOW GLOBAL STATUS LIKE 'Threads_connected'", variable("Threads_connected", "90")), "SHOW GLOBAL VARIABLES LIKE 'max_connections'", variable("max_connections", "100")), nil, ""},
 		{"max_connections unknown", nil, with(healthyServer("OFF"), "SHOW GLOBAL VARIABLES LIKE 'max_connections'", variable("max_connections", "0")), nil, ""},
 		{"threads_connected not a number", nil, with(healthyServer("OFF"), "SHOW GLOBAL STATUS LIKE 'Threads_connected'", variable("Threads_connected", "many")), nil, "failed to get threads_connected"},
@@ -127,7 +127,7 @@ func TestCheckMySQL(t *testing.T) {
 		{"replica in sync", nil, with(healthyServer("ON"), "SHOW REPLICA STATUS", replicaStatus(replicaCols, "Waiting", "Yes", "Yes", "3")), replica, ""},
 		{"replica at the lag limit", nil, with(healthyServer("1"), "SHOW REPLICA STATUS", replicaStatus(replicaCols, "Waiting", "Yes", "Yes", "60")), replica, ""},
 		{"replica lagging", nil, with(healthyServer("ON"), "SHOW REPLICA STATUS", replicaStatus(replicaCols, "Waiting", "Yes", "Yes", "99999")), replica,
-			"Seconds_Behind_Source (99999) exceeds max allowed (60)"},
+			"Seconds_Behind_Source exceeds max allowed (60)"},
 		{"replica IO stopped", nil, with(healthyServer("ON"), "SHOW REPLICA STATUS", replicaStatus(replicaCols, "", "No", "Yes", nil)), replica, "Replica_IO_Running is No, expected Yes"},
 		{"replica SQL stopped", nil, with(healthyServer("ON"), "SHOW REPLICA STATUS", replicaStatus(replicaCols, "Waiting", "Yes", "No", nil)), replica, "Replica_SQL_Running is No, expected Yes"},
 		{"replica IO connecting", nil, with(healthyServer("ON"), "SHOW REPLICA STATUS", replicaStatus(replicaCols, "Connecting", "Connecting", "Yes", nil)), replica, "Replica_IO_Running is Connecting, expected Yes"},
@@ -139,7 +139,7 @@ func TestCheckMySQL(t *testing.T) {
 			"failed to query replication status: Error 1227: Access denied"},
 		{"old server falls back to SHOW SLAVE STATUS", nil, with(with(healthyServer("ON"), "SHOW REPLICA STATUS", fakeResult{err: syntaxErr}), "SHOW SLAVE STATUS", replicaStatus(slaveCols, "Waiting", "Yes", "Yes", "5")), replica, ""},
 		{"old server lagging", nil, with(with(healthyServer("ON"), "SHOW REPLICA STATUS", fakeResult{err: syntaxErr}), "SHOW SLAVE STATUS", replicaStatus(slaveCols, "Waiting", "Yes", "Yes", "61")), replica,
-			"Seconds_Behind_Master (61) exceeds max allowed (60)"},
+			"Seconds_Behind_Master exceeds max allowed (60)"},
 		{"old server IO stopped", nil, with(with(healthyServer("ON"), "SHOW REPLICA STATUS", fakeResult{err: syntaxErr}), "SHOW SLAVE STATUS", replicaStatus(slaveCols, "", "No", "Yes", nil)), replica, "Slave_IO_Running is No, expected Yes"},
 		{"MariaDB names under SHOW REPLICA STATUS", nil, with(healthyServer("ON"), "SHOW REPLICA STATUS", replicaStatus(slaveCols, "Waiting", "Yes", "Yes", "0")), replica, ""},
 	}
@@ -179,7 +179,7 @@ func TestMySQLConfig(t *testing.T) {
 		if cfg.Net != tc.wantNet || cfg.Addr != tc.wantAddr || cfg.User != "monitor@ops" || cfg.Passwd != "p@ss:w/rd?x=1&y" {
 			t.Fatalf("%s: net=%s addr=%s user=%s passwd=%s", tc.endpoint, cfg.Net, cfg.Addr, cfg.User, cfg.Passwd)
 		}
-		if cfg.Timeout != checkTimeout || cfg.ReadTimeout != checkTimeout || cfg.WriteTimeout != checkTimeout {
+		if cfg.Timeout != 2*checkTimeout || cfg.ReadTimeout != 2*checkTimeout || cfg.WriteTimeout != 2*checkTimeout {
 			t.Fatalf("%s: timeouts %v %v %v", tc.endpoint, cfg.Timeout, cfg.ReadTimeout, cfg.WriteTimeout)
 		}
 	}

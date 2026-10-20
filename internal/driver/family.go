@@ -105,11 +105,18 @@ func (b *bothFamiliesDriver) Check() (*CheckResult, error) {
 		errs = append(errs, fmt.Errorf("%s: %w", r.family, err))
 	}
 
+	success := r4.Success && r6.Success
+	part := func(r *CheckResult) string {
+		if r.Success && !success {
+			return "ok"
+		}
+		return r.Message
+	}
 	return &CheckResult{
-		Success:      r4.Success && r6.Success,
+		Success:      success,
 		ResponseTime: max(r4.ResponseTime, r6.ResponseTime),
 		Error:        errors.Join(errs...),
-		Message:      fmt.Sprintf("ipv4: %s; ipv6: %s", r4.Message, r6.Message),
+		Message:      fmt.Sprintf("ipv4: %s; ipv6: %s", part(r4), part(r6)),
 	}, nil
 }
 
