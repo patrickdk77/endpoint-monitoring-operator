@@ -115,6 +115,10 @@ vet: ## Run go vet against code.
 test: manifests generate fmt vet setup-envtest ## Run tests.
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test $$(go list ./... | grep -v /e2e) -coverprofile cover.out
 
+.PHONY: test-docker
+test-docker: ## Run the database and redis driver tests against real servers in Docker.
+	go test -tags docker -v -timeout 90m -parallel 4 ./test/docker/
+
 # The e2e tests run on a throwaway minikube cluster that test-e2e creates and
 # deletes. Every command the tests run gets only that cluster's kubeconfig.
 # CertManager is installed by default; skip with:

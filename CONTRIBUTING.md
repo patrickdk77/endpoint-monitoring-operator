@@ -51,6 +51,15 @@ Add the driver's name to the `Enum` marker on `EndpointMonitorSpec.Driver` in `a
 
 Add the driver to `testEndpoints` in `pkg/factory/factory_test.go`. `TestCRDDriverEnumMatchesFactory` fails for any driver in the CRD enum that is missing there.
 
+If the driver talks to a server that runs in a container, add its images to `test/docker` and run `make test-docker`. Those tests start each image with Docker and check the driver against it. The `docker` build tag keeps them out of `make test`.
+
+Each run labels the containers and networks it creates `emo-e2e`, and removes them when it finishes or gets Ctrl-C. A second Ctrl-C, or the run's `-timeout`, ends it before it can, so remove what it left once no other run is going:
+
+```bash
+docker rm -f -v $(docker ps -aq --filter label=emo-e2e)
+docker network rm $(docker network ls -q --filter label=emo-e2e)
+```
+
 ## Add a New Notifier
 
 Want to send alerts to PagerDuty or OpsGenie?
