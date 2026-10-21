@@ -30,13 +30,14 @@ func TestHostPort(t *testing.T) {
 
 func TestHostDriversRejectURLAndUserEndpoints(t *testing.T) {
 	build := map[string]func(string) (Driver, error){
-		"tcp":   func(e string) (Driver, error) { return NewTCPDriver(e, "") },
-		"ping":  func(e string) (Driver, error) { return NewPingDriver(e, "") },
-		"redis": func(e string) (Driver, error) { return NewREDISDriver(e, "", nil, "default", nil) },
-		"smtp":  func(e string) (Driver, error) { return NewSMTPDriver(e, "", nil, "default", nil) },
-		"tls":   func(e string) (Driver, error) { return NewTLSDriver(e, "", nil) },
-		"mysql": func(e string) (Driver, error) { return NewMYSQLDriver(e, "", nil, "default", nil) },
-		"dns":   func(e string) (Driver, error) { return NewDNSDriver(e, "", nil) },
+		"tcp":      func(e string) (Driver, error) { return NewTCPDriver(e, "") },
+		"ping":     func(e string) (Driver, error) { return NewPingDriver(e, "") },
+		"redis":    func(e string) (Driver, error) { return NewREDISDriver(e, "", nil, "default", nil) },
+		"smtp":     func(e string) (Driver, error) { return NewSMTPDriver(e, "", nil, "default", nil) },
+		"tls":      func(e string) (Driver, error) { return NewTLSDriver(e, "", nil) },
+		"mysql":    func(e string) (Driver, error) { return NewMYSQLDriver(e, "", nil, "default", nil) },
+		"postgres": func(e string) (Driver, error) { return NewPostgresDriver(e, "", nil, "default", nil) },
+		"dns":      func(e string) (Driver, error) { return NewDNSDriver(e, "", nil) },
 	}
 	for name, newDriver := range build {
 		for _, endpoint := range []string{

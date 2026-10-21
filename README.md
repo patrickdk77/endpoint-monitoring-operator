@@ -1,6 +1,6 @@
 # Endpoint-Monitoring Operator
 
-> A Kubernetes operator that checks HTTP and JSON endpoints, TCP ports, DNS, TLS certificates, SMTP, Redis, MySQL, MariaDB, Trino and OpenSearch from inside your cluster, and sends alerts to Slack, Discord, e-mail or a webhook. Each check is one EndpointMonitor resource.
+> A Kubernetes operator that checks HTTP and JSON endpoints, TCP ports, DNS, TLS certificates, SMTP, Redis, MySQL, MariaDB, PostgreSQL, Trino and OpenSearch from inside your cluster, and sends alerts to Slack, Discord, e-mail or a webhook. Each check is one EndpointMonitor resource.
 
 ![Go](https://img.shields.io/badge/Go-%3E%3D1.27.2-blue?logo=go)
 ![License](https://img.shields.io/github/license/LiciousTech/endpoint-monitoring-operator)
@@ -34,6 +34,7 @@ Traditional uptime checkers only tell you if a port is open. **Endpoint-Monitori
 | `tls`         | TLS handshake with certificate verification, and an optional expiry window |
 | `mysql`       | Log in, check read_only, connection count, replica lag |
 | `mariadb`     | The `mysql` checks against a MariaDB server        |
+| `postgres`    | Log in; a primary must be writable, a replica streaming and within its lag |
 
 `pkg/factory/factory.go` builds every driver and notifier. CONTRIBUTING.md lists the steps for adding one.
 
@@ -179,7 +180,7 @@ kubectl apply -f dashboard/deploy/config.yaml -f dashboard/deploy/deployment.yam
 * Persistent metrics export (Prometheus CRD)
 * Synthetic transaction scripts (e.g., login + checkout)
 * Secretless credentials via CSI Drivers
-* **New drivers:** PostgreSQL, MongoDB, ScyllaDB, Kafka
+* **New drivers:** MongoDB, ScyllaDB, Kafka
 
 Feel free to open an Issue or Pull Request!
 

@@ -1,0 +1,33 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres-credentials
+  namespace: endpoint-monitoring-operator-system
+type: Opaque
+stringData:
+  username: monitor
+  password: changeme
+---
+apiVersion: monitoring.licious.app/v1alpha1
+kind: EndpointMonitor
+metadata:
+  name: postgres-check
+  namespace: endpoint-monitoring-operator-system
+spec:
+  driver: postgres
+  endpoint: postgres.example.com:5432
+  checkInterval: 60
+  postgresCheck:
+    secretRef:
+      name: postgres-credentials
+    # database: postgres
+    # Optionally, expect a streaming replica and fail when it is more than
+    # this many seconds behind. The login needs pg_monitor to read the WAL
+    # receiver's status.
+    # maxSecondsBehindMaster: 60
+  notify:
+    slack:
+      enabled: true
+      webhookUrl: https://hooks.slack.com/services/XXXXXXXXX/YYYYYYYYY/ZZZZZZZZZZZZ
+      alertOn:
+        - failure

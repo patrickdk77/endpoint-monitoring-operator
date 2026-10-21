@@ -67,6 +67,7 @@ spec:
                 - opensearch
                 - mysql
                 - mariadb
+                - postgres
                 type: string
               endpoint:
                 type: string
@@ -272,6 +273,24 @@ spec:
                     required:
                     - enabled
                     - webhookUrl
+                    type: object
+                type: object
+              postgresCheck:
+                properties:
+                  database:
+                    description: Database to log in to. Defaults to postgres.
+                    type: string
+                  maxSecondsBehindMaster:
+                    description: |-
+                      MaxSecondsBehindMaster, when set, expects a streaming replica and
+                      fails when it has fallen further behind than this.
+                    type: integer
+                  secretRef:
+                    properties:
+                      name:
+                        type: string
+                    required:
+                    - name
                     type: object
                 type: object
               redisCheck:

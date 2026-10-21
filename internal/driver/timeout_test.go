@@ -2,6 +2,7 @@ package driver
 
 import (
 	"bufio"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"net"
@@ -185,4 +186,91 @@ func TestDNSDriverStillAnswersWithinTimeout(t *testing.T) {
 	if res := checkWithin(t, d, 5*time.Second); !res.Success {
 		t.Fatalf("a responsive DNS server failed: %s", res.Message)
 	}
+}
+
+func TestPostgresDriverGivesUpOnStalledServer(t *testing.T) {
+	withCheckTimeout(t, 200*time.Millisecond)
+	for _, tc := range []struct {
+		refuseTLS bool
+		conns     int32
+	}{{false, 1}, {true, 2}} {
+		t.Run(fmt.Sprintf("tls refused=%v", tc.refuseTLS), func(t *testing.T) {
+			endpoint, accepted := tcpServer(func(c net.Conn) {
+				if tc.refuseTLS && pgSSLRequest(c) {
+					// Refuse TLS; the client then reconnects without it, and
+					// that connection is never answered.
+					_, _ = c.Write([]byte("N"))
+					return
+				}
+				_, _ = io.Copy(io.Discard, c)
+			})(t, "tcp4")
+			d, _ := NewPostgresDriver(endpoint, "", nil, "default", nil)
+			res := checkWithin(t, d, 10*time.Second)
+			if res.Success || !waitAccepted(accepted) {
+				t.Fatalf("success=%v accepted=%d %s", res.Success, accepted.Load(), res.Message)
+			}
+			time.Sleep(100 * time.Millisecond)
+			if accepted.Load() != tc.conns {
+				t.Fatalf("%d connections, want %d; once the check's deadline passes it must not dial again", accepted.Load(), tc.conns)
+			}
+		})
+	}
+}
+
+func TestPostgresDriverGivesUpOnTricklingServer(t *testing.T) {
+	withCheckTimeout(t, 200*time.Millisecond)
+	endpoint, _ := tcpServer(func(c net.Conn) {
+		if pgSSLRequest(c) {
+			_, _ = c.Write([]byte("N"))
+			return
+		}
+		// An authentication message header promising 255 bytes, then one
+		// byte every 50ms.
+		if _, err := c.Write([]byte{'R', 0, 0, 0, 0xff}); err != nil {
+			return
+		}
+		for range 255 {
+			time.Sleep(50 * time.Millisecond)
+			if _, err := c.Write([]byte{0}); err != nil {
+				return
+			}
+		}
+	})(t, "tcp4")
+	d, _ := NewPostgresDriver(endpoint, "", nil, "default", nil)
+	start := time.Now()
+	res := checkWithin(t, d, 5*time.Second)
+	if res.Success {
+		t.Fatalf("a trickling server passed: %s", res.Message)
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Fatalf("took %v with a 200ms timeout", elapsed)
+	}
+}
+
+func TestPostgresDriverGivesUpOnAQueryThatNeverAnswers(t *testing.T) {
+	withCheckTimeout(t, 200*time.Millisecond)
+	endpoint, _ := tcpServer(pgDialog("postgres", "postgres", "", nil))(t, "tcp4")
+	d, _ := NewPostgresDriver(endpoint, "", nil, "default", nil)
+	start := time.Now()
+	res := checkWithin(t, d, 5*time.Second)
+	if res.Success {
+		t.Fatalf("an unanswered query passed: %s", res.Message)
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Fatalf("took %v with a 200ms timeout", elapsed)
+	}
+}
+
+// pgSSLRequest reads a client's first message and reports whether it asked
+// for TLS; any other message is read in full.
+func pgSSLRequest(c net.Conn) bool {
+	head := make([]byte, 8)
+	if _, err := io.ReadFull(c, head); err != nil {
+		return false
+	}
+	if binary.BigEndian.Uint32(head[4:]) == 80877103 {
+		return true
+	}
+	_, _ = io.CopyN(io.Discard, c, int64(binary.BigEndian.Uint32(head[:4]))-8)
+	return false
 }

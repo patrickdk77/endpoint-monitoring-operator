@@ -185,6 +185,8 @@ func (f *DriverFactory) createFamilyDriver(driverType, endpoint, family string, 
 		return driver.NewMYSQLDriver(endpoint, family, monitor.Spec.MysqlCheck, namespace, client)
 	case "mariadb":
 		return driver.NewMariaDBDriver(endpoint, family, monitor.Spec.MysqlCheck, namespace, client)
+	case "postgres":
+		return driver.NewPostgresDriver(endpoint, family, monitor.Spec.PostgresCheck, namespace, client)
 	default:
 		return nil, fmt.Errorf("unsupported driver type: %s", driverType)
 	}

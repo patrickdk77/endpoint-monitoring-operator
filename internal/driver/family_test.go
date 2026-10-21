@@ -300,6 +300,9 @@ func TestDriversHonorFamily(t *testing.T) {
 		{"mysql", true, tcpServer(func(net.Conn) {}), func(e, f string) (Driver, error) {
 			return NewMYSQLDriver(e, f, nil, "default", nil)
 		}},
+		{"postgres", false, tcpServer(pgDialog("postgres", "postgres", "", pgPrimaryAnswers)), func(e, f string) (Driver, error) {
+			return NewPostgresDriver(e, f, nil, "default", nil)
+		}},
 		{"http", false, httpServer(func(w http.ResponseWriter, r *http.Request) {
 			fmt.Fprint(w, "ok")
 		}), func(e, f string) (Driver, error) {
