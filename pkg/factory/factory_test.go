@@ -102,6 +102,7 @@ var testEndpoints = map[string]string{
 	"smtp": "127.0.0.1:1", "redis": "127.0.0.1:1", "tls": "127.0.0.1:1",
 	"tcp": "127.0.0.1:1", "dns": "example.test", "ping": "127.0.0.1",
 	"mysql": "127.0.0.1:1", "mariadb": "127.0.0.1:1", "postgres": "127.0.0.1:1",
+	"mongodb": "127.0.0.1:1",
 }
 
 func TestCreateDriverEveryTypeEveryFamily(t *testing.T) {

@@ -68,6 +68,7 @@ spec:
                 - mysql
                 - mariadb
                 - postgres
+                - mongodb
                 type: string
               endpoint:
                 type: string
@@ -113,6 +114,23 @@ spec:
                 x-kubernetes-validations:
                 - message: must not list a family twice
                   rule: self.all(f, self.exists_one(g, g == f))
+              mongodbCheck:
+                properties:
+                  maxSecondsBehindMaster:
+                    description: |-
+                      MaxSecondsBehindMaster, when set, expects a secondary and fails when
+                      its oplog is further behind the primary's than this.
+                    type: integer
+                  secretRef:
+                    properties:
+                      name:
+                        type: string
+                    required:
+                    - name
+                    type: object
+                  tls:
+                    type: boolean
+                type: object
               mysqlCheck:
                 properties:
                   maxSecondsBehindMaster:

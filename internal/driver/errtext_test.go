@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -89,6 +90,8 @@ func TestErrorText(t *testing.T) {
 			"the endpoint is not a valid URL"},
 		{"other certificate error", x509.HostnameError{Certificate: &x509.Certificate{DNSNames: []string{"localhost"}}, Host: "other.test"},
 			"x509: certificate is valid for localhost, not other.test"},
+		{"mongodb connection counter", errors.New(`connection(db.example.test:27017[-16]) incomplete read of message header: EOF`),
+			`connection(db.example.test:27017) incomplete read of message header: EOF`},
 		{"plain error", errors.New(`unexpected reply "-ERR"`), `unexpected reply "-ERR"`},
 	}
 	for _, tc := range tests {
@@ -172,6 +175,13 @@ func TestFailureTextIsStableBetweenChecks(t *testing.T) {
 	drivers["http2 stream reset"], _ = NewHTTPDriver(h2.URL, "", nil, nil)
 	drivers["http redirect with a nonce"], _ = NewHTTPDriver(redirect.URL, "", nil, nil)
 	drivers["dns timeout"], _ = NewDNSDriver("example.test", "", &v1.DnsCheck{Server: silent.LocalAddr().String(), Type: "A"})
+	mongoHangUp, _ := tcpServer(func(c net.Conn) {
+		if _, err := io.ReadFull(c, make([]byte, 16)); err == nil {
+			resetConn(c)
+		}
+	})(t, "tcp4")
+	drivers["mongodb reset"], _ = NewMongoDBDriver(mongoHangUp, "", nil, "default", nil)
+	drivers["mongodb refused"], _ = NewMongoDBDriver(down, "", nil, "default", nil)
 	for name, d := range drivers {
 		t.Run(name, func(t *testing.T) {
 			first, _ := d.Check()
@@ -179,7 +189,7 @@ func TestFailureTextIsStableBetweenChecks(t *testing.T) {
 			if first.Success || second.Success {
 				t.Fatalf("expected failures: %q / %q", first.Message, second.Message)
 			}
-			if first.Message != second.Message || strings.Contains(first.Message, "->") || strings.Contains(first.Message, "stream ID") {
+			if first.Message != second.Message || strings.Contains(first.Message, "->") || strings.Contains(first.Message, "stream ID") || strings.Contains(first.Message, "[-") {
 				t.Fatalf("the failure text names a local address or changed:\n%s\n%s", first.Message, second.Message)
 			}
 		})

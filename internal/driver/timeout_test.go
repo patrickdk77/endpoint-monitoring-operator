@@ -274,3 +274,32 @@ func pgSSLRequest(c net.Conn) bool {
 	_, _ = io.CopyN(io.Discard, c, int64(binary.BigEndian.Uint32(head[:4]))-8)
 	return false
 }
+
+func TestMongoDBDriverGivesUpOnStalledServer(t *testing.T) {
+	withCheckTimeout(t, 200*time.Millisecond)
+	endpoint, accepted := tcpServer(func(c net.Conn) { _, _ = io.Copy(io.Discard, c) })(t, "tcp4")
+	d, _ := NewMongoDBDriver(endpoint, "", nil, "default", nil)
+	res := checkWithin(t, d, 10*time.Second)
+	if res.Success || !waitAccepted(accepted) || !strings.Contains(res.Message, "failed to run hello: server selection error") {
+		t.Fatalf("success=%v accepted=%d %s", res.Success, accepted.Load(), res.Message)
+	}
+	seen := accepted.Load()
+	time.Sleep(300 * time.Millisecond)
+	if accepted.Load() != seen {
+		t.Fatalf("%d connections, then %d; once the check is over it must not dial again", seen, accepted.Load())
+	}
+}
+
+func TestMongoDBDriverGivesUpOnACommandThatNeverAnswers(t *testing.T) {
+	withCheckTimeout(t, 200*time.Millisecond)
+	endpoint, _ := tcpServer(fakeMongo(mongoPrimary, nil))(t, "tcp4")
+	d, _ := NewMongoDBDriver(endpoint, "", nil, "default", nil)
+	start := time.Now()
+	res := checkWithin(t, d, 5*time.Second)
+	if res.Success {
+		t.Fatalf("an unanswered command passed: %s", res.Message)
+	}
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Fatalf("took %v with a 200ms timeout", elapsed)
+	}
+}
