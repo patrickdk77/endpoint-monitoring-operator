@@ -21,6 +21,15 @@ var stableText = []struct {
 	{regexp.MustCompile(`\bconnection\(([^()\[]*)\[-\d+\]\)`), "connection($1)"},
 }
 
+// textError reports text in place of the error it wraps.
+type textError struct {
+	text string
+	err  error
+}
+
+func (e *textError) Error() string { return e.text }
+func (e *textError) Unwrap() error { return e.err }
+
 func errorText(err error) string {
 	var urlErr *url.Error
 	if errors.As(err, &urlErr) && urlErr.Op == "parse" {

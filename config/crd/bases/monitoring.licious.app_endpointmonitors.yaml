@@ -69,6 +69,7 @@ spec:
                 - mariadb
                 - postgres
                 - mongodb
+                - scylladb
                 type: string
               endpoint:
                 type: string
@@ -322,6 +323,16 @@ spec:
                     type: object
                   tls:
                     type: boolean
+                type: object
+              scylladbCheck:
+                properties:
+                  secretRef:
+                    properties:
+                      name:
+                        type: string
+                    required:
+                    - name
+                    type: object
                 type: object
               smtpCheck:
                 properties:

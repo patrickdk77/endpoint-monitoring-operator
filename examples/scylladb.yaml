@@ -1,0 +1,29 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: scylladb-credentials
+  namespace: endpoint-monitoring-operator-system
+type: Opaque
+stringData:
+  username: monitor
+  password: changeme
+---
+apiVersion: monitoring.licious.app/v1alpha1
+kind: EndpointMonitor
+metadata:
+  name: scylladb-check
+  namespace: endpoint-monitoring-operator-system
+spec:
+  driver: scylladb
+  endpoint: scylladb.example.com:9042
+  checkInterval: 60
+  scylladbCheck:
+    # Omit the secret when the node does not use PasswordAuthenticator.
+    secretRef:
+      name: scylladb-credentials
+  notify:
+    slack:
+      enabled: true
+      webhookUrl: https://hooks.slack.com/services/XXXXXXXXX/YYYYYYYYY/ZZZZZZZZZZZZ
+      alertOn:
+        - failure

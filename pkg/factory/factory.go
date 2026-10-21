@@ -189,6 +189,8 @@ func (f *DriverFactory) createFamilyDriver(driverType, endpoint, family string, 
 		return driver.NewPostgresDriver(endpoint, family, monitor.Spec.PostgresCheck, namespace, client)
 	case "mongodb":
 		return driver.NewMongoDBDriver(endpoint, family, monitor.Spec.MongodbCheck, namespace, client)
+	case "scylladb":
+		return driver.NewScyllaDBDriver(endpoint, family, monitor.Spec.ScylladbCheck, namespace, client)
 	default:
 		return nil, fmt.Errorf("unsupported driver type: %s", driverType)
 	}

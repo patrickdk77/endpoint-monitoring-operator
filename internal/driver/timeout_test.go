@@ -303,3 +303,38 @@ func TestMongoDBDriverGivesUpOnACommandThatNeverAnswers(t *testing.T) {
 		t.Fatalf("took %v with a 200ms timeout", elapsed)
 	}
 }
+
+func TestScyllaDBDriverGivesUpOnStalledServer(t *testing.T) {
+	withCheckTimeout(t, 200*time.Millisecond)
+	endpoint, accepted := tcpServer(func(c net.Conn) { _, _ = io.Copy(io.Discard, c) })(t, "tcp4")
+	d, _ := NewScyllaDBDriver(endpoint, "", nil, "default", nil)
+	start := time.Now()
+	res := checkWithin(t, d, 10*time.Second)
+	if res.Success || !waitAccepted(accepted) {
+		t.Fatalf("success=%v accepted=%d %s", res.Success, accepted.Load(), res.Message)
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Fatalf("took %v with a 200ms timeout", elapsed)
+	}
+	time.Sleep(500 * time.Millisecond)
+	seen := accepted.Load()
+	time.Sleep(500 * time.Millisecond)
+	if accepted.Load() != seen {
+		t.Fatalf("%d connections, then %d; long after the check it must not dial again", seen, accepted.Load())
+	}
+}
+
+func TestScyllaDBDriverGivesUpOnAQueryThatNeverAnswers(t *testing.T) {
+	withCheckTimeout(t, 500*time.Millisecond)
+	endpoint, _ := tcpServer(fakeCQL("", "", "COMPLETED", false, 0))(t, "tcp4")
+	d, _ := NewScyllaDBDriver(endpoint, "", nil, "default", nil)
+	start := time.Now()
+	res := checkWithin(t, d, 5*time.Second)
+	if res.Success {
+		t.Fatalf("an unanswered query passed: %s", res.Message)
+	}
+	// gocql's own query timeout is twice the check's; the context must end it first.
+	if elapsed := time.Since(start); elapsed > 900*time.Millisecond {
+		t.Fatalf("took %v with a 500ms timeout", elapsed)
+	}
+}

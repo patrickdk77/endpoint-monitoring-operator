@@ -67,12 +67,16 @@ type MongodbCheck struct {
 	MaxSecondsBehindMaster *int `json:"maxSecondsBehindMaster,omitempty"`
 }
 
+type ScylladbCheck struct {
+	SecretRef SecretRef `json:"secretRef,omitempty"`
+}
+
 // MaxCheckInterval is the largest checkInterval, in seconds, the CRD accepts.
 const MaxCheckInterval = 31536000
 
 // EndpointMonitorSpec defines the desired state of EndpointMonitor
 type EndpointMonitorSpec struct {
-	// +kubebuilder:validation:Enum=http;http-json;smtp;redis;tls;tcp;dns;ping;trino;opensearch;mysql;mariadb;postgres;mongodb
+	// +kubebuilder:validation:Enum=http;http-json;smtp;redis;tls;tcp;dns;ping;trino;opensearch;mysql;mariadb;postgres;mongodb;scylladb
 	Driver   string `json:"driver"`   // ex: "opensearch", "trino", "http", "http-json"
 	Endpoint string `json:"endpoint"` // target service URL
 	// +kubebuilder:validation:Minimum=1
@@ -88,6 +92,7 @@ type EndpointMonitorSpec struct {
 	MysqlCheck    *MysqlCheck    `json:"mysqlCheck,omitempty"`    // only relevant for driver = "mysql", "mariadb"
 	PostgresCheck *PostgresCheck `json:"postgresCheck,omitempty"` // only relevant for driver = "postgres"
 	MongodbCheck  *MongodbCheck  `json:"mongodbCheck,omitempty"`  // only relevant for driver = "mongodb"
+	ScylladbCheck *ScylladbCheck `json:"scylladbCheck,omitempty"` // only relevant for driver = "scylladb"
 	// IpFamily lists the address families to connect to the endpoint over.
 	// With ipv4 or ipv6 alone, every connection uses that family, connects
 	// directly, ignoring HTTP proxy settings, and redirects stay on that

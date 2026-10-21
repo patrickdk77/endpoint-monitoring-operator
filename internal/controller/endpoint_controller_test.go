@@ -340,7 +340,7 @@ var _ = Describe("EndpointMonitor Controller", func() {
 		})
 
 		It("accepts every driver and alertOn value", func() {
-			for i, driverType := range []string{"http", "http-json", "smtp", "redis", "tls", "tcp", "dns", "ping", "trino", "opensearch", "mysql", "mariadb", "postgres", "mongodb"} {
+			for i, driverType := range []string{"http", "http-json", "smtp", "redis", "tls", "tcp", "dns", "ping", "trino", "opensearch", "mysql", "mariadb", "postgres", "mongodb", "scylladb"} {
 				spec := validSpec()
 				spec.Driver = driverType
 				spec.CheckInterval = 1

@@ -182,6 +182,13 @@ func TestFailureTextIsStableBetweenChecks(t *testing.T) {
 	})(t, "tcp4")
 	drivers["mongodb reset"], _ = NewMongoDBDriver(mongoHangUp, "", nil, "default", nil)
 	drivers["mongodb refused"], _ = NewMongoDBDriver(down, "", nil, "default", nil)
+	scyllaHangUp, _ := tcpServer(func(c net.Conn) {
+		if _, err := io.ReadFull(c, make([]byte, 9)); err == nil {
+			resetConn(c)
+		}
+	})(t, "tcp4")
+	drivers["scylladb reset"], _ = NewScyllaDBDriver(scyllaHangUp, "", nil, "default", nil)
+	drivers["scylladb refused"], _ = NewScyllaDBDriver(down, "", nil, "default", nil)
 	for name, d := range drivers {
 		t.Run(name, func(t *testing.T) {
 			first, _ := d.Check()

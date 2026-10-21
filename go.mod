@@ -5,6 +5,7 @@ go 1.27.2
 godebug default=go1.27
 
 require (
+	github.com/apache/cassandra-gocql-driver/v2 v2.1.2
 	github.com/aws/aws-sdk-go-v2/config v1.32.25
 	github.com/aws/aws-sdk-go-v2/service/sesv2 v1.62.4
 	github.com/go-sql-driver/mysql v1.10.0

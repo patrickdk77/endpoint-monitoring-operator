@@ -84,7 +84,7 @@ func (p *PostgresDriver) run(ctx context.Context) error {
 	}
 	conn, err := pgx.ConnectConfig(ctx, cfg)
 	if err != nil {
-		return fmt.Errorf("failed to connect: %w", &pgConnectError{text: pgConnectText(err), err: err})
+		return fmt.Errorf("failed to connect: %w", &textError{text: pgConnectText(err), err: err})
 	}
 	defer func() {
 		closeCtx, cancel := context.WithTimeout(context.Background(), time.Second)
@@ -160,14 +160,6 @@ func familyLookup(lookup pgconn.LookupFunc, family string) pgconn.LookupFunc {
 		return kept, nil
 	}
 }
-
-type pgConnectError struct {
-	text string
-	err  error
-}
-
-func (e *pgConnectError) Error() string { return e.text }
-func (e *pgConnectError) Unwrap() error { return e.err }
 
 var pgAttemptPrefix = regexp.MustCompile(`^\S+ \([^()]*\): `)
 

@@ -38,6 +38,7 @@ func TestHostDriversRejectURLAndUserEndpoints(t *testing.T) {
 		"mysql":    func(e string) (Driver, error) { return NewMYSQLDriver(e, "", nil, "default", nil) },
 		"postgres": func(e string) (Driver, error) { return NewPostgresDriver(e, "", nil, "default", nil) },
 		"mongodb":  func(e string) (Driver, error) { return NewMongoDBDriver(e, "", nil, "default", nil) },
+		"scylladb": func(e string) (Driver, error) { return NewScyllaDBDriver(e, "", nil, "default", nil) },
 		"dns":      func(e string) (Driver, error) { return NewDNSDriver(e, "", nil) },
 	}
 	for name, newDriver := range build {
