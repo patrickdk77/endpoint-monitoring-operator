@@ -13,65 +13,70 @@ import (
 
 type DNSDriver struct {
 	endpoint string
+	family   string
 	check    *v1.DnsCheck
 }
 
-func NewDNSDriver(endpoint string, check *v1.DnsCheck) (Driver, error) {
+func NewDNSDriver(endpoint, family string, check *v1.DnsCheck) (Driver, error) {
 	if endpoint == "" {
 		return nil, fmt.Errorf("endpoint cannot be empty")
 	}
+	if err := checkHostEndpoint(endpoint); err != nil {
+		return nil, err
+	}
+	if check == nil {
+		check = &v1.DnsCheck{}
+	}
 
-	return &DNSDriver{endpoint: endpoint, check: check}, nil
+	return &DNSDriver{endpoint: endpoint, family: family, check: check}, nil
 }
 
 func (d *DNSDriver) Check() (*CheckResult, error) {
 	start := time.Now()
+	ctx, cancel := context.WithTimeout(context.Background(), checkTimeout)
+	defer cancel()
 
 	var err error = nil
 	var resolver *net.Resolver
-	if d.check == nil || d.check.Server == "" { // Use default dns resolver
+	if d.check.Server == "" { // Use default dns resolver
 		resolver = &net.Resolver{
 			PreferGo: true,
 			Dial:     nil,
 		}
+		if d.family != "" {
+			resolver.Dial = familyDial(d.family)
+		}
 	} else {
-		var hostPart string
-		var port string
-		hostPart, port, err = net.SplitHostPort(d.check.Server)
-		if err != nil {
-			hostPart = d.check.Server
-			port = ""
-			err = nil
+		defaultPort := "53"
+		if d.check.Tls {
+			defaultPort = "853"
+		}
+		hostPart, port := hostPort(d.check.Server, defaultPort)
+		var host []string
+		host, err = net.DefaultResolver.LookupHost(ctx, hostPart) // We need to specify the dns server by ip address, so make sure
+		var addr string
+		if err == nil {
+			addr, err = pickFamily(host, d.family)
 		}
 		if err == nil {
-			if port == "" {
-				port = "53"
-				if d.check.Tls {
-					port = "853"
+			server := net.JoinHostPort(addr, port)
+			if d.check.Tls { // use DNSoverTLS server
+				tlsConfig := &tls.Config{ServerName: hostPart}
+				resolver = &net.Resolver{
+					PreferGo: true,
+					Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
+						dialer := &net.Dialer{Timeout: 10 * time.Second}
+						tlsDialer := &tls.Dialer{NetDialer: dialer, Config: tlsConfig}
+						return tlsDialer.DialContext(ctx, familyNetwork("tcp", d.family), server)
+					},
 				}
-			}
-			var host []string
-			host, err = net.LookupHost(hostPart) // We need to specify the dns server by ip address, so make sure
-			if err == nil {
-				server := net.JoinHostPort(host[0], port)
-				if d.check.Tls { // use DNSoverTLS server
-					tlsConfig := &tls.Config{ServerName: hostPart}
-					resolver = &net.Resolver{
-						PreferGo: true,
-						Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
-							dialer := &net.Dialer{Timeout: 10 * time.Second}
-							tlsDialer := &tls.Dialer{NetDialer: dialer, Config: tlsConfig}
-							return tlsDialer.DialContext(ctx, network, server)
-						},
-					}
-				} else { // Use normal specific dns server
-					resolver = &net.Resolver{
-						PreferGo: true,
-						Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
-							dialer := &net.Dialer{Timeout: 10 * time.Second}
-							return dialer.DialContext(ctx, network, server)
-						},
-					}
+			} else { // Use normal specific dns server
+				resolver = &net.Resolver{
+					PreferGo: true,
+					Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
+						dialer := &net.Dialer{Timeout: 10 * time.Second}
+						return dialer.DialContext(ctx, familyNetwork(network, d.family), server)
+					},
 				}
 			}
 		}
@@ -81,7 +86,7 @@ func (d *DNSDriver) Check() (*CheckResult, error) {
 		switch strings.ToUpper(d.check.Type) {
 		case "TXT":
 			var values []string
-			values, err = resolver.LookupTXT(context.Background(), d.endpoint)
+			values, err = resolver.LookupTXT(ctx, d.endpoint)
 			if err == nil && d.check.Verify != "" {
 				match := false
 				for _, val := range values {
@@ -95,19 +100,19 @@ func (d *DNSDriver) Check() (*CheckResult, error) {
 			}
 		case "CNAME":
 			var value string
-			value, err = resolver.LookupCNAME(context.Background(), d.endpoint)
+			value, err = resolver.LookupCNAME(ctx, d.endpoint)
 			if err == nil && d.check.Verify != "" {
-				if value != d.check.Verify {
+				if !sameName(value, d.check.Verify) {
 					err = fmt.Errorf("returned dns result did not match Verify value")
 				}
 			}
 		case "PTR":
 			var values []string
-			values, err = resolver.LookupAddr(context.Background(), d.endpoint)
+			values, err = resolver.LookupAddr(ctx, d.endpoint)
 			if err == nil && d.check.Verify != "" {
 				match := false
 				for _, val := range values {
-					if val == d.check.Verify {
+					if sameName(val, d.check.Verify) {
 						match = true
 					}
 				}
@@ -117,7 +122,7 @@ func (d *DNSDriver) Check() (*CheckResult, error) {
 			}
 		case "AAAA":
 			var values []net.IP
-			values, err = resolver.LookupIP(context.Background(), "ip6", d.endpoint)
+			values, err = resolver.LookupIP(ctx, "ip6", d.endpoint)
 			if err == nil && d.check.Verify != "" {
 				ip := net.ParseIP(d.check.Verify)
 				match := false
@@ -132,7 +137,7 @@ func (d *DNSDriver) Check() (*CheckResult, error) {
 			}
 		case "A":
 			var values []net.IP
-			values, err = resolver.LookupIP(context.Background(), "ip4", d.endpoint)
+			values, err = resolver.LookupIP(ctx, "ip4", d.endpoint)
 			if err == nil && d.check.Verify != "" {
 				ip := net.ParseIP(d.check.Verify)
 				match := false
@@ -147,7 +152,7 @@ func (d *DNSDriver) Check() (*CheckResult, error) {
 			}
 		default:
 			var values []string
-			values, err = resolver.LookupHost(context.Background(), d.endpoint)
+			values, err = resolver.LookupHost(ctx, d.endpoint)
 			if err == nil && d.check.Verify != "" {
 				match := false
 				for _, val := range values {
@@ -171,7 +176,7 @@ func (d *DNSDriver) Check() (*CheckResult, error) {
 	if err != nil {
 		result.Success = false
 		result.Error = err
-		result.Message = fmt.Sprintf("DNS check failed: %v", err)
+		result.Message = fmt.Sprintf("DNS check failed: %s", errorText(err))
 		return result, nil
 	}
 
@@ -179,6 +184,10 @@ func (d *DNSDriver) Check() (*CheckResult, error) {
 	result.Message = fmt.Sprintf("DNS check successful (response time: %v)", duration)
 
 	return result, nil
+}
+
+func sameName(a, b string) bool {
+	return strings.EqualFold(strings.TrimSuffix(a, "."), strings.TrimSuffix(b, "."))
 }
 
 func (d *DNSDriver) GetEndpoint() string {

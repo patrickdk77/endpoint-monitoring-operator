@@ -29,7 +29,13 @@ func TestAggregateFromLocations(t *testing.T) {
 		{"one degraded", []LocationStatus{LocationDegraded, LocationSuccess}, AggregateOperational},
 		{"one outage", []LocationStatus{LocationOutage, LocationSuccess}, AggregateDegraded},
 		{"two non-success with one up", []LocationStatus{LocationOutage, LocationDegraded, LocationSuccess}, AggregateDegraded},
+		{"two degraded with one up", []LocationStatus{LocationDegraded, LocationDegraded, LocationSuccess}, AggregateDegraded},
 		{"all non-success", []LocationStatus{LocationOutage, LocationDegraded}, AggregateMajorOutage},
+		{"every location degraded", []LocationStatus{LocationDegraded, LocationDegraded}, AggregateDegraded},
+		{"every location in outage", []LocationStatus{LocationOutage, LocationOutage}, AggregateMajorOutage},
+		{"single location up", []LocationStatus{LocationSuccess}, AggregateOperational},
+		{"single location degraded", []LocationStatus{LocationDegraded}, AggregateDegraded},
+		{"single location in outage", []LocationStatus{LocationOutage}, AggregateMajorOutage},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

@@ -2,24 +2,40 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
 	"time"
 
-	"k8s.io/apimachinery/pkg/api/errors"
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	monitorv1alpha1 "github.com/patrickdk77/endpoint-monitoring-operator/api/v1alpha1"
 	notifierTypes "github.com/patrickdk77/endpoint-monitoring-operator/internal/notifier"
 	"github.com/patrickdk77/endpoint-monitoring-operator/pkg/factory"
 )
 
+// setupRetry caps how long a monitor whose driver or notifier cannot be
+// built waits before the next attempt, so a Secret created after the
+// monitor is picked up without waiting a long checkInterval.
+const setupRetry = 30 * time.Second
+
 type EndpointMonitorReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme   *runtime.Scheme
+	Recorder events.EventRecorder
+	// MaxConcurrentReconciles is the most monitors checked at once; values
+	// below 1 mean 1.
+	MaxConcurrentReconciles int
 }
 
 func (r *EndpointMonitorReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -32,7 +48,7 @@ func (r *EndpointMonitorReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 	var monitor monitorv1alpha1.EndpointMonitor
 	if err := r.Get(ctx, req.NamespacedName, &monitor); err != nil {
-		if errors.IsNotFound(err) {
+		if apierrors.IsNotFound(err) {
 			logger.Info("EndpointMonitor resource not found. Ignoring since object must be deleted.")
 			return ctrl.Result{}, nil
 		}
@@ -40,12 +56,18 @@ func (r *EndpointMonitorReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return ctrl.Result{}, err
 	}
 
+	if monitor.Spec.CheckInterval < 1 || monitor.Spec.CheckInterval > monitorv1alpha1.MaxCheckInterval {
+		err := fmt.Errorf("checkInterval must be between 1 and %d, got %d", monitorv1alpha1.MaxCheckInterval, monitor.Spec.CheckInterval)
+		return r.cannotCheck(ctx, &monitor, err, 0), nil
+	}
+
 	now := time.Now()
 	checkInterval := time.Duration(monitor.Spec.CheckInterval) * time.Second
 	nextCheckTime := monitor.Status.LastCheckedTime.Time.Add(checkInterval)
 
-	if !monitor.Status.LastCheckedTime.IsZero() && now.Before(nextCheckTime) {
-		requeueAfter := time.Until(nextCheckTime)
+	specChanged := monitor.Status.ObservedGeneration != 0 && monitor.Status.ObservedGeneration != monitor.Generation
+	if !monitor.Status.LastCheckedTime.IsZero() && now.Before(nextCheckTime) && !specChanged {
+		requeueAfter := nextCheckTime.Sub(now)
 		logger.Info("Skipping reconcile; checkInterval not yet elapsed",
 			"name", monitor.Name,
 			"lastChecked", monitor.Status.LastCheckedTime.Time,
@@ -54,16 +76,15 @@ func (r *EndpointMonitorReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return ctrl.Result{RequeueAfter: requeueAfter}, nil
 	}
 
+	retry := min(checkInterval, setupRetry)
 	driver, err := factory.NewDriver(monitor.Spec.Driver, monitor.Spec.Endpoint, &monitor, req.Namespace, r.Client)
 	if err != nil {
-		logger.Error(err, "Failed to create driver")
-		return ctrl.Result{}, err
+		return r.cannotCheck(ctx, &monitor, fmt.Errorf("cannot create driver: %w", err), retry), nil
 	}
 
 	notifier, err := factory.NewNotifier(&monitor.Spec.Notify)
 	if err != nil {
-		logger.Error(err, "Failed to create notifier")
-		return ctrl.Result{}, err
+		return r.cannotCheck(ctx, &monitor, err, retry), nil
 	}
 
 	result, err := driver.Check()
@@ -72,62 +93,70 @@ func (r *EndpointMonitorReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return ctrl.Result{}, err
 	}
 
-	noticeValues := notifierTypes.NoticeValues{
-		// save values that can be overwritten by the Status().Update
-		LastStatus:       monitor.Status.LastStatus,
-		LastStatusChange: monitor.Status.LastStatusChange.Time.String(),
-		StatusTime:       now.Sub(monitor.Status.LastStatusChange.Time).Round(time.Second).String(),
-		Status:           "failure",
-		Healthy:          "unhealthy",
-		Endpoint:         driver.GetEndpoint(),
-		Driver:           driver.GetType(),
-		Name:             monitor.Name,
-		Message:          result.Message,
-		Response:         result.ResponseTime.String(),
-		ResponseTimeMs:   result.ResponseTime.Milliseconds(),
-		CurrentTime:      now.String(),
-		Namespace:        req.Namespace,
-		AlertMessage:     "",
+	notified, notifiedSince := monitor.Status.LastStatus, monitor.Status.LastStatusChange
+	if monitor.Status.LastNotifiedStatus != nil {
+		notified, notifiedSince = *monitor.Status.LastNotifiedStatus, monitor.Status.LastNotifiedStatusChange
 	}
+
+	noticeValues := notifierTypes.NoticeValues{
+		LastStatus:     monitor.Status.LastStatus,
+		Status:         "failure",
+		Healthy:        "unhealthy",
+		Endpoint:       notifierTypes.DisplayEndpoint(driver.GetEndpoint()),
+		Driver:         driver.GetType(),
+		Name:           monitor.Name,
+		Message:        result.Message,
+		Response:       result.ResponseTime.String(),
+		ResponseTimeMs: result.ResponseTime.Milliseconds(),
+		CurrentTime:    now.String(),
+		Namespace:      req.Namespace,
+		AlertMessage:   "",
+	}
+	setStatusPeriod(&noticeValues, monitor.Status.LastStatusChange, now)
 	if result.Success {
 		noticeValues.Status = "success"
 		noticeValues.Healthy = "healthy"
 	}
+	monitor.Status.LastNotifiedStatus = &notified
+	monitor.Status.LastNotifiedStatusChange = notifiedSince
 
-	updated := false
 	nowMetaTime := metav1.NewTime(now)
 	if monitor.Status.LastStatus != noticeValues.Status {
 		monitor.Status.LastStatus = noticeValues.Status
 		monitor.Status.LastStatusChange = nowMetaTime
-		updated = true
 	}
-	if monitor.Status.LastCheckedTime != nowMetaTime {
-		monitor.Status.LastCheckedTime = nowMetaTime
-		updated = true
-	}
+	monitor.Status.LastCheckedTime = nowMetaTime
+	monitor.Status.ObservedGeneration = monitor.Generation
 
 	// Save updates to resource beofre sending notification, incase of notification failure
 	// also fix out of order updates if the notification takes longer than the next check interval
 	// and the next update saves before this cone
-	if updated {
-		if err := r.Status().Update(ctx, &monitor); err != nil {
-			logger.Error(err, "Failed to update EndpointMonitor status")
-			return ctrl.Result{}, err
-		}
+	if err := r.Status().Update(ctx, &monitor); err != nil {
+		logger.Error(err, "Failed to update EndpointMonitor status")
+		return ctrl.Result{}, err
 	}
 
 	// calculate notice values that are not time sensitive
 	noticeValues.AlertMessage = fmt.Sprintf("%s monitor for %s is %s\n%s", noticeValues.Driver, noticeValues.Endpoint, noticeValues.Healthy, noticeValues.Message)
 
 	if err := notifier.SendAlert(noticeValues.Status, &noticeValues, r.Client); err != nil {
-		logger.Error(err, "Failed to send alert")
-		return ctrl.Result{}, err
+		r.alertFailed(ctx, &monitor, noticeValues.Status, err)
 	}
 
-	if noticeValues.LastStatus != noticeValues.Status {
-		if err := notifier.SendAlert("change", &noticeValues, r.Client); err != nil {
-			logger.Error(err, "Failed to send alert")
-			return ctrl.Result{}, err
+	if notified != noticeValues.Status {
+		changeValues := noticeValues
+		changeValues.LastStatus = notified
+		setStatusPeriod(&changeValues, notifiedSince, monitor.Status.LastStatusChange.Time)
+		if err := notifier.SendAlert("change", &changeValues, r.Client); err != nil {
+			r.alertFailed(ctx, &monitor, "change", err)
+		} else {
+			status := noticeValues.Status
+			monitor.Status.LastNotifiedStatus = &status
+			monitor.Status.LastNotifiedStatusChange = monitor.Status.LastStatusChange
+			if err := r.Status().Update(ctx, &monitor); err != nil {
+				logger.Error(err, "Failed to update EndpointMonitor status")
+				return ctrl.Result{}, err
+			}
 		}
 	}
 
@@ -139,8 +168,43 @@ func (r *EndpointMonitorReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	return ctrl.Result{RequeueAfter: checkInterval}, nil
 }
 
+// setStatusPeriod describes the period of the previous status: when it began
+// and how long it lasted until the given time.
+func setStatusPeriod(values *notifierTypes.NoticeValues, since metav1.Time, until time.Time) {
+	if since.IsZero() || until.IsZero() || until.Before(since.Time) {
+		values.LastStatusChange, values.StatusTime = "", ""
+		return
+	}
+	values.LastStatusChange = since.Time.String()
+	values.StatusTime = until.Sub(since.Time).Round(time.Second).String()
+}
+
+// alertFailed logs the error but leaves it out of the event, which namespace
+// viewers can read: notifier errors can include webhook URLs that act as
+// credentials.
+func (r *EndpointMonitorReconciler) alertFailed(ctx context.Context, monitor *monitorv1alpha1.EndpointMonitor, alert string, err error) {
+	log.FromContext(ctx).Error(err, "Failed to send alert", "name", monitor.Name, "alert", alert)
+	failed := "a notifier"
+	var sendErr *factory.SendError
+	if errors.As(err, &sendErr) {
+		failed = strings.Join(sendErr.Notifiers, ", ")
+	}
+	r.Recorder.Eventf(monitor, nil, corev1.EventTypeWarning, "AlertFailed", "Notify", "%s alert was not sent by %s; the operator log has the error", alert, failed)
+}
+
+// cannotCheck reports a monitor that cannot be checked and retries it after
+// retry; zero waits for the spec to change.
+func (r *EndpointMonitorReconciler) cannotCheck(ctx context.Context, monitor *monitorv1alpha1.EndpointMonitor, err error, retry time.Duration) ctrl.Result {
+	log.FromContext(ctx).Error(err, "Cannot check EndpointMonitor", "name", monitor.Name)
+	r.Recorder.Eventf(monitor, nil, corev1.EventTypeWarning, "CannotCheck", "Check", "%s", err.Error())
+	return ctrl.Result{RequeueAfter: retry}
+}
+
 func (r *EndpointMonitorReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&monitorv1alpha1.EndpointMonitor{}).
+		For(&monitorv1alpha1.EndpointMonitor{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
+		// The priority queue keeps monitors listed at startup at low priority
+		// for good, so newer monitors could starve them under load.
+		WithOptions(controller.Options{MaxConcurrentReconciles: r.MaxConcurrentReconciles, UsePriorityQueue: new(false)}).
 		Complete(r)
 }

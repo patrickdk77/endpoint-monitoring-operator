@@ -1,6 +1,7 @@
 package driver
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -25,7 +26,7 @@ type TrinoInfoResponse struct {
 	NodeVersion NodeVersion `json:"nodeVersion"`
 }
 
-func NewTrinoDriver(endpoint string) (Driver, error) {
+func NewTrinoDriver(endpoint, family string) (Driver, error) {
 	if endpoint == "" {
 		return nil, fmt.Errorf("endpoint cannot be empty")
 	}
@@ -34,9 +35,7 @@ func NewTrinoDriver(endpoint string) (Driver, error) {
 
 	return &TrinoDriver{
 		endpoint: endpoint,
-		client: &http.Client{
-			Timeout: 30 * time.Second,
-		},
+		client:   httpClient(family, 30*time.Second),
 	}, nil
 }
 
@@ -55,7 +54,7 @@ func (t *TrinoDriver) Check() (*CheckResult, error) {
 	if err != nil {
 		result.Success = false
 		result.Error = err
-		result.Message = fmt.Sprintf("Trino check failed: %v", err)
+		result.Message = fmt.Sprintf("Trino check failed: %s", errorText(err))
 		return result, nil
 	}
 
@@ -63,15 +62,19 @@ func (t *TrinoDriver) Check() (*CheckResult, error) {
 
 	if resp.StatusCode != 200 {
 		result.Success = false
-		result.Message = fmt.Sprintf("Trino check failed (status: %d, response time: %v)", resp.StatusCode, duration)
+		result.Message = fmt.Sprintf("Trino check failed (status: %d)", resp.StatusCode)
 		return result, nil
 	}
 
 	var trinoInfo TrinoInfoResponse
-	if err := json.NewDecoder(resp.Body).Decode(&trinoInfo); err != nil {
+	body, err := readBody(resp.Body)
+	if err == nil {
+		err = json.NewDecoder(bytes.NewReader(body)).Decode(&trinoInfo)
+	}
+	if err != nil {
 		result.Success = false
 		result.Error = err
-		result.Message = fmt.Sprintf("Trino check failed to parse response: %v", err)
+		result.Message = fmt.Sprintf("Trino check failed to parse response: %s", errorText(err))
 		return result, nil
 	}
 
@@ -85,8 +88,8 @@ func (t *TrinoDriver) Check() (*CheckResult, error) {
 			trinoInfo.Coordinator, trinoInfo.Starting, trinoInfo.Uptime, trinoInfo.NodeVersion.Version, trinoInfo.Environment, duration)
 	} else {
 		result.Success = false
-		result.Message = fmt.Sprintf("Trino check failed (coordinator: %t, starting: %t, uptime: %s, version: %s, env: %s, response time: %v)",
-			trinoInfo.Coordinator, trinoInfo.Starting, trinoInfo.Uptime, trinoInfo.NodeVersion.Version, trinoInfo.Environment, duration)
+		result.Message = fmt.Sprintf("Trino check failed (coordinator: %t, starting: %t, version: %s, env: %s)",
+			trinoInfo.Coordinator, trinoInfo.Starting, trinoInfo.NodeVersion.Version, trinoInfo.Environment)
 	}
 
 	return result, nil

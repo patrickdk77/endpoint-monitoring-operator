@@ -38,7 +38,7 @@ func TestDiscordNotifier_SendAlert(t *testing.T) {
 			t.Fatalf("expected no error, got %v", err)
 		}
 		// Update: Expect the styled message format
-		expected := n.formatDiscordMessage("failure", &values)
+		expected := n.formatDiscordMessage(&values)
 		if receivedPayload.Content != expected {
 			t.Errorf("expected message '%s', got '%s'", expected, receivedPayload.Content)
 		}
@@ -79,7 +79,7 @@ func TestDiscordNotifier_formatDiscordMessage(t *testing.T) {
 
 	t.Run("failure status", func(t *testing.T) {
 		values := notifier.NoticeValues{Status: "failure", AlertMessage: "something went wrong"}
-		msg := n.formatDiscordMessage("failure", &values)
+		msg := n.formatDiscordMessage(&values)
 		if want := ":x: **Endpoint Monitor Alert** :x:\n\n**Status:** FAILURE\n\n**Details:**\n```\nsomething went wrong\n```"; msg != want {
 			t.Errorf("unexpected format for failure: got %q, want %q", msg, want)
 		}
@@ -87,7 +87,7 @@ func TestDiscordNotifier_formatDiscordMessage(t *testing.T) {
 
 	t.Run("success status", func(t *testing.T) {
 		values := notifier.NoticeValues{Status: "success", AlertMessage: "all good"}
-		msg := n.formatDiscordMessage("success", &values)
+		msg := n.formatDiscordMessage(&values)
 		if want := ":white_check_mark: **Endpoint Monitor Alert** :white_check_mark:\n\n**Status:** SUCCESS\n\n**Details:**\n```\nall good\n```"; msg != want {
 			t.Errorf("unexpected format for success: got %q, want %q", msg, want)
 		}
@@ -95,7 +95,7 @@ func TestDiscordNotifier_formatDiscordMessage(t *testing.T) {
 
 	t.Run("other status", func(t *testing.T) {
 		values := notifier.NoticeValues{Status: "info", AlertMessage: "misc info"}
-		msg := n.formatDiscordMessage("info", &values)
+		msg := n.formatDiscordMessage(&values)
 		if want := ":information_source: **Endpoint Monitor Alert** :information_source:\n\n**Status:** INFO\n\n**Details:**\n```\nmisc info\n```"; msg != want {
 			t.Errorf("unexpected format for info: got %q, want %q", msg, want)
 		}

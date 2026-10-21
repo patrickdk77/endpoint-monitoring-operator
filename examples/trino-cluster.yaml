@@ -10,4 +10,4 @@ spec:
   notify:
     slack:
       enabled: true
-      webhookUrl: https://hooks.slack.com/services/XXXXXXXXX/YYYYYYYYY/ZZZZZZZZZZZZ # alertOn not specified , so by default only reports failures.
+      webhookUrl: https://hooks.slack.com/services/XXXXXXXXX/YYYYYYYYY/ZZZZZZZZZZZZ # alertOn not specified, so by default only reports failures.

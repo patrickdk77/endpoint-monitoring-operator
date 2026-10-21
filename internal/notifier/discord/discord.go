@@ -29,7 +29,7 @@ func (d *DiscordNotifier) SendAlert(status string, values *notifier.NoticeValues
 		return nil // silently skip
 	}
 
-	styledMsg := d.formatDiscordMessage(status, values)
+	styledMsg := d.formatDiscordMessage(values)
 	payload := map[string]string{"content": styledMsg}
 	jsonData, err := json.Marshal(payload)
 	if err != nil {
@@ -42,7 +42,7 @@ func (d *DiscordNotifier) SendAlert(status string, values *notifier.NoticeValues
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", version.UserAgent)
-	httpClient := &http.Client{}
+	httpClient := &http.Client{Timeout: notifier.Timeout}
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send discord alert: %w", err)
@@ -60,7 +60,7 @@ func (d *DiscordNotifier) shouldAlert(status string) bool {
 	return notifier.ShouldAlert(d.cfg.AlertOn, status)
 }
 
-func (d *DiscordNotifier) formatDiscordMessage(status string, values *notifier.NoticeValues) string {
+func (d *DiscordNotifier) formatDiscordMessage(values *notifier.NoticeValues) string {
 	var statusEmoji string
 	switch values.Status {
 	case "success":

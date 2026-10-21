@@ -1,6 +1,6 @@
 # Installation
 
-You can install the endpoint-monitoring-operator into your Kubernetes cluster with a single command :
+You can install the endpoint-monitoring-operator into your Kubernetes cluster with a single command:
 
 ```bash
 kubectl apply -f https://raw.githubusercontent.com/LiciousTech/endpoint-monitoring-operator/main/dist/install.yaml
@@ -10,11 +10,11 @@ This manifest sets up everything needed.
 
 # Example usage
 
-You can also refer examples folder in this repo.
+The examples folder in this repo has more.
 
 ## 1. DNS
 
-Let’s say you want to monitor that your domain name is resolving correctly, you can use the dns driver.
+To check that your domain name resolves, use the dns driver.
 
 ```yaml
 apiVersion: monitoring.licious.app/v1alpha1
@@ -44,7 +44,7 @@ Check status:
 kubectl get endpointmonitor domain-monitor -n endpoint-monitoring-operator-system -o yaml
 ```
 
-describe :
+describe:
 
 ```bash
 kubectl describe endpointmonitor domain-monitor -n endpoint-monitoring-operator-system
@@ -118,12 +118,12 @@ spec:
   notify:
     slack:
       enabled: true
-      webhookUrl: <slack-webhook-url>  # alertOn not specified , so by default only reports failures.
+      webhookUrl: <slack-webhook-url>  # alertOn not specified, so by default only reports failures.
 ```
 
 ## 4. TCP
 
-Let’s say you want to monitor if a MySQL port on RDS is accepting connections:
+To check that a MySQL port on RDS accepts connections:
 
 ```yaml
 apiVersion: monitoring.licious.app/v1alpha1
@@ -144,7 +144,7 @@ spec:
 ```
 
 ## 5. OpenSearch
-If you want to ensure your OpenSearch cluster is healthy (i.e., in green or yellow state), you can use the opensearch driver.
+The opensearch driver reads `/_cluster/health` and passes only when the cluster status is green. Yellow and red both fail.
 
 ```yaml
 apiVersion: monitoring.licious.app/v1alpha1
@@ -166,7 +166,7 @@ spec:
 
 ## 6. HTTP
 
-Use the http driver when you only care about the status code of the response (e.g., 200 OK).
+Use the http driver when you only care about the status code. It follows redirects and passes on any 2xx response.
 
 ```yaml
 apiVersion: monitoring.licious.app/v1alpha1
@@ -188,7 +188,7 @@ spec:
 
 ## 7. Ping
 
-Use the ping driver when you want to verify basic network reachability (ICMP) to a host.
+The ping driver opens a TCP connection to the host, on port 80 unless the endpoint names another port. It does not send ICMP.
 
 ```yaml
 apiVersion: monitoring.licious.app/v1alpha1
@@ -199,7 +199,7 @@ metadata:
 spec:
   checkInterval: 60  # every 1 minute
   driver: ping
-  endpoint: 8.8.8.8
+  endpoint: 8.8.8.8:53
   notify:
     slack:
       enabled: true

@@ -14,24 +14,24 @@
     <div class="card">
       <div class="meta">{{.Meta.Driver}} · {{.Meta.Endpoint}}</div>
       <div class="section-head">
-        <h3>Last 90 days</h3>
+        <h3>Last {{len .Daily}} days</h3>
         <div class="sla-grid" title="Uptime summaries">
           <div class="sla-card">
             <span class="sla-label">7 Days</span>
-            <span class="sla" id="sla7">—</span>
+            <span class="sla" id="sla7">{{formatSLA .SLA7}}</span>
           </div>
           <div class="sla-card">
             <span class="sla-label">30 Days</span>
-            <span class="sla" id="sla30">—</span>
+            <span class="sla" id="sla30">{{formatSLA .SLA30}}</span>
           </div>
           <div class="sla-card">
             <span class="sla-label">365 Days</span>
-            <span class="sla" id="sla365">—</span>
+            <span class="sla" id="sla365">{{formatSLA .SLA365}}</span>
           </div>
         </div>
       </div>
       <div class="timeline">
-        {{range .Daily}}<a class="bar {{barClass .Status .Date}}" href="/{{$.Dashboard}}/{{$.ServiceID}}?day={{.Date}}" title="{{.Label}}: {{.Status}} (view this day)"></a>{{end}}
+        {{range .Daily}}<a class="bar {{barClass .Status .Date}}{{if .Color}} bar-shaded{{end}}"{{with .Color}} style="--shade: {{.}}"{{end}} href="/{{$.Dashboard}}/{{$.ServiceID}}?day={{.Date}}" title="{{.Label}}: {{if .Total}}{{.Uptime}} ({{.Failed}} of {{.Total}} failed){{else}}no data{{end}} (view this day)"></a>{{end}}
       </div>
     </div>
     <div class="card">
@@ -41,20 +41,20 @@
       <div id="controls">
         <label>Location: <select id="location-select"><option value="all">All</option></select></label>
         <label>Time Frame: <select id="time-frame-select">
-          <option value="1d">Last 24 hours</option>
-          <option value="7d">Week</option>
-          <option value="30d">Month</option>
-          <option value="60d">2 months</option>
-          <option value="90d">3 months</option>
+          {{range .Ranges}}<option value="{{.Key}}"{{if eq .Key $.IssueRange}} selected{{end}}>{{.Label}}</option>{{end}}
         </select></label>
       </div>
-      <canvas id="rt-chart" width="800" height="200"></canvas>
-      <div id="rt-stats" class="meta"></div>
+      <div class="chart-wrap">
+        <canvas id="rt-chart" width="800" height="220"></canvas>
+        <div id="rt-tip" class="chart-tip" hidden></div>
+      </div>
+      <div id="rt-legend" class="chart-legend"></div>
+      <div id="rt-stats"></div>
     </div>
     <div class="card">
       <div class="section-head">
         <h3>{{.WindowsTitle}}</h3>
-        {{if .SelectedDay}}<a href="/{{.Dashboard}}/{{.ServiceID}}">Back to latest</a>{{end}}
+        {{if .SelectedDay}}<a href="/{{.Dashboard}}/{{.ServiceID}}">Back to latest</a>{{else}}<span class="range-links">{{range .Ranges}}<a href="/{{$.Dashboard}}/{{$.ServiceID}}?range={{.Key}}"{{if eq .Key $.IssueRange}} class="active"{{end}}>{{.Label}}</a>{{end}}</span>{{end}}
       </div>
       {{if .Windows}}
       <ul class="incidents">
@@ -68,7 +68,7 @@
             <span class="incident-locs" title="Reporting locations">{{.Locations}}</span>
           </div>
           <div class="meta">
-            {{.Start}} &rarr; {{.End}} · {{.Duration}} · {{.Count}} failed check{{if ne .Count 1}}s{{end}}
+            {{.Start}} &rarr; {{.End}}{{if .Duration}} · {{.Duration}}{{end}} · {{.Count}} failed check{{if ne .Count 1}}s{{end}}
           </div>
         </li>
         {{end}}

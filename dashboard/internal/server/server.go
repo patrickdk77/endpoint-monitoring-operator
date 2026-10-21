@@ -13,7 +13,7 @@ import (
 	"html/template"
 	"io"
 	"io/fs"
-	"math"
+	"log"
 	"mime"
 	"net/http"
 	"path"
@@ -83,6 +83,9 @@ func New(s *store.Store, retentionDays int) (*Server, error) {
 				return template.HTML(fmt.Sprintf(`<span class="%s"><span class="sla-num">%s</span><span class="sla-percent">%%</span></span>`, class, html.EscapeString(num)))
 			}
 			return template.HTML(html.EscapeString(s))
+		},
+		"formatStatus": func(s string) string {
+			return strings.ReplaceAll(s, "_", " ")
 		},
 		"assetURL": func(name string) string {
 			return assetURL(name, hashes)
@@ -157,6 +160,7 @@ func (s *Server) Handler() http.Handler {
 	apiMux.HandleFunc("GET /dashboards", s.handleAPIDashboards)
 	apiMux.HandleFunc("GET /dashboard/{dash}/overview", s.handleAPIOverview)
 	apiMux.HandleFunc("GET /dashboard/{dash}/{name}", s.handleAPIService)
+	apiMux.HandleFunc("GET /dashboard/{dash}/{name}/latency", s.handleAPILatency)
 
 	pageMux := http.NewServeMux()
 	pageMux.HandleFunc("GET /{dash}", s.handleDashboard)
@@ -366,6 +370,33 @@ type dayBar struct {
 	Date   string
 	Status string
 	Label  string
+	Uptime string
+	Failed int
+	Total  int
+	Color  template.CSS
+}
+
+// uptimeColor shades a day bar by its uptime on a scale spaced by nines: 100%
+// is the operational color, 99.9% halfway to degraded, 99% degraded, 95%
+// halfway to major_outage, and 90% or less major_outage.
+func uptimeColor(success, total int) template.CSS {
+	if success >= total {
+		return "var(--operational)"
+	}
+	up := 100 * float64(success) / float64(total)
+	anchors := []float64{100, 99.9, 99, 95, 90}
+	step := float64(len(anchors) - 1)
+	for i := 1; i < len(anchors); i++ {
+		if up >= anchors[i] {
+			step = float64(i-1) + (anchors[i-1]-up)/(anchors[i-1]-anchors[i])
+			break
+		}
+	}
+	from, to, mix := "operational", "degraded", step/2
+	if step > 2 {
+		from, to, mix = "degraded", "major_outage", (step-2)/2
+	}
+	return template.CSS(fmt.Sprintf("color-mix(in srgb, var(--%s) %.1f%%, var(--%s))", to, 100*mix, from))
 }
 
 type serviceGroup struct {
@@ -394,20 +425,32 @@ func splitGroup(id string) (group, display string) {
 	return id[:i], rest
 }
 
+func unavailable(w http.ResponseWriter, err error) {
+	log.Printf("server: %v", err)
+	http.Error(w, "status data is unavailable", http.StatusServiceUnavailable)
+}
+
 func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	dash := r.PathValue("dash")
-	services, _ := s.store.ListServices(r.Context(), dash)
+	services, err := s.store.ListServices(r.Context(), dash)
+	if err != nil {
+		unavailable(w, err)
+		return
+	}
 	sort.Strings(services)
+	now := time.Now().UTC()
 
 	groupIndex := map[string]int{}
 	var groups []serviceGroup
 	for _, svc := range services {
-		meta, _ := s.store.GetMeta(r.Context(), dash, svc)
-		daily := s.dailyBars(r.Context(), dash, svc)
-		current := status.AggregateOperational
-		if len(daily) > 0 {
-			current = status.AggregateStatus(daily[len(daily)-1].Status)
+		hist, err := s.store.History(r.Context(), dash, svc, now)
+		if err != nil {
+			unavailable(w, err)
+			return
 		}
+		meta, _ := s.store.GetMeta(r.Context(), dash, svc)
+		daily := s.dailyBars(hist, now)
+		current := currentStatus(hist, now)
 		name := svc
 		if meta.Name != "" {
 			name = meta.Name
@@ -418,7 +461,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 			Display: display,
 			Meta:    meta,
 			Status:  string(current),
-			SLA:     s.sla(r.Context(), dash, svc),
+			SLA:     sla(hist, 30, now),
 			Daily:   daily,
 		}
 		idx, ok := groupIndex[group]
@@ -433,28 +476,40 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	s.render(w, "dashboard.html", dashboardData{Name: dash, Groups: groups})
 }
 
-func (s *Server) dailyBars(ctx context.Context, dash, svc string) []dayBar {
-	now := time.Now().UTC()
+// currentStatus returns the most recent actual status for a service: the live
+// current-hour aggregate if checks have run this hour, otherwise the most
+// recently completed hour in the past 6 hours, otherwise unknown.
+func currentStatus(hist store.History, now time.Time) status.AggregateStatus {
+	since := now.Add(-store.StatusMaxAge).Unix()
+	latestEpoch := int64(-1)
+	for epoch := range hist.Hours {
+		if epoch >= since && epoch > latestEpoch {
+			latestEpoch = epoch
+		}
+	}
+	if latestEpoch < 0 {
+		return status.AggregateUnknown
+	}
+	return status.AggregateStatus(hist.Hours[latestEpoch].Status)
+}
+
+func (s *Server) dailyBars(hist store.History, now time.Time) []dayBar {
 	// Render retention days ending with today (inclusive).
 	from := now.AddDate(0, 0, -(s.retention - 1)).Truncate(24 * time.Hour)
-	rollups, _ := s.store.GetAggregateRollups(ctx, dash, svc, from, now)
-
-	// Overlay the current hour computed live, so today's value reflects state
-	// changes immediately rather than waiting for the next rollup pass.
-	curHour := now.Truncate(time.Hour)
-	if agg, ok := s.store.ComputeAggregate(ctx, dash, svc, curHour); ok {
-		rollups[curHour.Unix()] = agg
-	}
 
 	// Hours with no data are never stored or overlaid, so unknown never enters
 	// here; a day takes the worst status among the hours that do have data.
 	byDay := map[string]status.AggregateStatus{}
-	for hourEpoch, rollup := range rollups {
+	for hourEpoch, rollup := range hist.Hours {
+		if hourEpoch < from.Unix() {
+			continue
+		}
 		day := time.Unix(hourEpoch, 0).UTC().Format("2006-01-02")
 		st := status.AggregateStatus(rollup.Status)
 		byDay[day] = status.WorstAggregate(byDay[day], st)
 	}
 
+	counts := hist.ByDay(now)
 	var bars []dayBar
 	for d := 0; d < s.retention; d++ {
 		day := from.AddDate(0, 0, d)
@@ -463,42 +518,26 @@ func (s *Server) dailyBars(ctx context.Context, dash, svc string) []dayBar {
 		if st == "" {
 			st = status.AggregateUnknown
 		}
-		bars = append(bars, dayBar{
+		bar := dayBar{
 			Date:   key,
 			Status: string(st),
 			Label:  key,
-		})
+		}
+		if c := counts[key]; c.Total > 0 {
+			bar.Uptime = store.FormatPercent(c.Success, c.Total)
+			bar.Failed = c.Total - c.Success
+			bar.Total = c.Total
+			bar.Color = uptimeColor(c.Success, c.Total)
+		}
+		bars = append(bars, bar)
 	}
 	return bars
 }
 
-// sla computes the uptime percentage over the retention window as the ratio of
-// successful to total checks across all locations. Hours with no data simply
-// contribute nothing. Returns an empty string when there is no data at all.
-func (s *Server) sla(ctx context.Context, dash, svc string) string {
-	now := time.Now().UTC()
-	from := now.Add(-29 * 24 * time.Hour)
-	rollups, _ := s.store.GetAggregateRollups(ctx, dash, svc, from, now)
-
-	curHour := now.Truncate(time.Hour)
-	if agg, ok := s.store.ComputeAggregate(ctx, dash, svc, curHour); ok {
-		rollups[curHour.Unix()] = agg
-	}
-
-	var success, failure int
-	for _, r := range rollups {
-		success += r.Success
-		failure += r.Failure
-	}
-	total := success + failure
-	if total == 0 {
-		return ""
-	}
-	pct := float64(success) / float64(total) * 100
-	if pct == math.Trunc(pct) {
-		return fmt.Sprintf("%.0f%%", pct)
-	}
-	return fmt.Sprintf("%.2f%%", pct)
+// sla is the uptime over the given number of days ending today, across all
+// locations, or an empty string when there were no checks.
+func sla(hist store.History, days int, now time.Time) string {
+	return store.FormatPercent(hist.Uptime(days, now))
 }
 
 type windowView struct {
@@ -517,30 +556,93 @@ type serviceData struct {
 	Display      string
 	Group        string
 	Meta         store.Meta
-	SLA          string
+	SLA7         string
+	SLA30        string
+	SLA365       string
 	SelectedDay  string
+	Ranges       []rangeOption
+	IssueRange   string
 	WindowsTitle string
 	Windows      []windowView
 	Daily        []dayBar
+}
+
+// maxPlotPoints caps each location's series in the latency chart for ranges
+// longer than a day; the one-day range plots every check.
+const maxPlotPoints = 1440
+
+type rangeOption struct {
+	Key   string
+	Label string
+	Days  int
+}
+
+// rangeOptions lists the ranges the issues list and the chart offer: 24
+// hours, 7 days and 30 days, then the whole retention, never past it.
+func (s *Server) rangeOptions() []rangeOption {
+	var opts []rangeOption
+	for _, o := range []rangeOption{{"1d", "24 hours", 1}, {"7d", "7 days", 7}, {"30d", "30 days", 30}} {
+		if o.Days <= s.retention {
+			opts = append(opts, o)
+		}
+	}
+	if last := opts[len(opts)-1]; s.retention > last.Days {
+		opts = append(opts, rangeOption{strconv.Itoa(s.retention) + "d", strconv.Itoa(s.retention) + " days", s.retention})
+	}
+	return opts
+}
+
+func (s *Server) parseRange(key string) rangeOption {
+	opts := s.rangeOptions()
+	for _, o := range opts {
+		if o.Key == key {
+			return o
+		}
+	}
+	return opts[0]
+}
+
+func (s *Server) handleAPILatency(w http.ResponseWriter, r *http.Request) {
+	dash := r.PathValue("dash")
+	svc := r.PathValue("name")
+	rng := s.parseRange(r.URL.Query().Get("range"))
+	maxPoints := maxPlotPoints
+	if rng.Days <= 1 {
+		maxPoints = 0
+	}
+	now := time.Now().UTC()
+	lat, err := s.store.Latency(r.Context(), dash, svc, now.Add(-time.Duration(rng.Days)*24*time.Hour), now, maxPoints)
+	if err != nil {
+		unavailable(w, err)
+		return
+	}
+	writeJSON(w, lat)
 }
 
 func (s *Server) handleService(w http.ResponseWriter, r *http.Request) {
 	dash := r.PathValue("dash")
 	svc := r.PathValue("name")
 
+	now := time.Now().UTC()
+	hist, err := s.store.History(r.Context(), dash, svc, now)
+	if err != nil {
+		unavailable(w, err)
+		return
+	}
 	meta, _ := s.store.GetMeta(r.Context(), dash, svc)
 	name := svc
 	if meta.Name != "" {
 		name = meta.Name
 	}
 	group, display := splitGroup(name)
-	now := time.Now().UTC()
 
-	// Default view: the rolling last 24 hours ending now. When a ?day=YYYY-MM-DD
-	// is supplied, show that calendar day's 24 hours instead.
-	from := now.Add(-24 * time.Hour).Truncate(time.Hour)
+	// Default view: the rolling range chosen with ?range= (24 hours unless
+	// set) ending now. When a ?day=YYYY-MM-DD is supplied, show that calendar
+	// day's 24 hours instead.
+	issueRange := s.parseRange(r.URL.Query().Get("range"))
+	from := now.Add(-time.Duration(issueRange.Days) * 24 * time.Hour).Truncate(time.Hour)
 	to := now
-	windowsTitle := "Issues (last 24 hours)"
+	windowsTitle := "Issues (last " + issueRange.Label + ")"
 	selectedDay := ""
 	if d, err := time.Parse("2006-01-02", r.URL.Query().Get("day")); err == nil {
 		from = d.UTC()
@@ -552,24 +654,35 @@ func (s *Server) handleService(w http.ResponseWriter, r *http.Request) {
 	// A window left open at the end of the stream is only "ongoing" when the
 	// view actually reaches the present.
 	live := !to.Before(now.Truncate(time.Hour))
-	windows := s.failureWindows(r.Context(), dash, svc, from, to, live)
+	windows, err := s.failureWindows(r.Context(), dash, svc, from, to, now, live)
+	if err != nil {
+		unavailable(w, err)
+		return
+	}
 
 	s.render(w, "service.html", serviceData{
 		Dashboard:    dash,
 		ServiceID:    svc,
 		Display:      display,
 		Group:        group,
-		SLA:          s.sla(r.Context(), dash, svc),
+		SLA7:         sla(hist, 7, now),
+		SLA30:        sla(hist, 30, now),
+		SLA365:       sla(hist, 365, now),
 		SelectedDay:  selectedDay,
+		Ranges:       s.rangeOptions(),
+		IssueRange:   issueRange.Key,
 		WindowsTitle: windowsTitle,
 		Meta:         meta,
 		Windows:      windows,
-		Daily:        s.dailyBars(r.Context(), dash, svc),
+		Daily:        s.dailyBars(hist, now),
 	})
 }
 
-func (s *Server) failureWindows(ctx context.Context, dash, svc string, from, to time.Time, live bool) []windowView {
-	raw := s.store.FailureWindows(ctx, dash, svc, from, to, live)
+func (s *Server) failureWindows(ctx context.Context, dash, svc string, from, to, now time.Time, live bool) ([]windowView, error) {
+	raw, err := s.store.FailureWindows(ctx, dash, svc, from, to, now, live)
+	if err != nil {
+		return nil, err
+	}
 	out := make([]windowView, 0, len(raw))
 	for _, w := range raw {
 		msg := w.Message
@@ -587,14 +700,16 @@ func (s *Server) failureWindows(ctx context.Context, dash, svc string, from, to 
 		}
 		if w.Ongoing {
 			v.End = "ongoing"
-			v.Duration = humanDuration(time.Now().UTC().Sub(start))
+			v.Duration = humanDuration(now.Sub(start))
 		} else {
 			v.End = end.Format("2006-01-02 15:04:05 UTC")
-			v.Duration = humanDuration(end.Sub(start))
+			if d := end.Sub(start); d > 0 {
+				v.Duration = humanDuration(d)
+			}
 		}
 		out = append(out, v)
 	}
-	return out
+	return out, nil
 }
 
 func humanDuration(d time.Duration) string {
@@ -613,7 +728,7 @@ func humanDuration(d time.Duration) string {
 func (s *Server) handleAPIDashboards(w http.ResponseWriter, r *http.Request) {
 	dashboards, err := s.store.ListDashboards(r.Context())
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		unavailable(w, err)
 		return
 	}
 	writeJSON(w, dashboards)
@@ -623,7 +738,7 @@ func (s *Server) handleAPIOverview(w http.ResponseWriter, r *http.Request) {
 	dash := r.PathValue("dash")
 	services, err := s.store.ListServices(r.Context(), dash)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		unavailable(w, err)
 		return
 	}
 	type item struct {
@@ -631,10 +746,16 @@ func (s *Server) handleAPIOverview(w http.ResponseWriter, r *http.Request) {
 		Meta    store.Meta `json:"meta"`
 		Daily   []dayBar   `json:"daily"`
 	}
+	now := time.Now().UTC()
 	var out []item
 	for _, svc := range services {
+		hist, err := s.store.History(r.Context(), dash, svc, now)
+		if err != nil {
+			unavailable(w, err)
+			return
+		}
 		meta, _ := s.store.GetMeta(r.Context(), dash, svc)
-		out = append(out, item{Service: svc, Meta: meta, Daily: s.dailyBars(r.Context(), dash, svc)})
+		out = append(out, item{Service: svc, Meta: meta, Daily: s.dailyBars(hist, now)})
 	}
 	writeJSON(w, out)
 }
@@ -643,18 +764,17 @@ func (s *Server) handleAPIService(w http.ResponseWriter, r *http.Request) {
 	dash := r.PathValue("dash")
 	svc := r.PathValue("name")
 	now := time.Now().UTC()
-	from := now.AddDate(0, 0, -s.retention).Truncate(24 * time.Hour)
-	rollups, err := s.store.GetAggregateRollups(r.Context(), dash, svc, from, now)
+	hist, err := s.store.History(r.Context(), dash, svc, now)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		unavailable(w, err)
 		return
 	}
 	meta, _ := s.store.GetMeta(r.Context(), dash, svc)
 	writeJSON(w, map[string]any{
 		"service": svc,
 		"meta":    meta,
-		"rollups": rollups,
-		"daily":   s.dailyBars(r.Context(), dash, svc),
+		"rollups": hist.Hours,
+		"daily":   s.dailyBars(hist, now),
 	})
 }
 

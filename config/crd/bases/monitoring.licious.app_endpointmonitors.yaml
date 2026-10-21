@@ -39,6 +39,8 @@ spec:
             description: EndpointMonitorSpec defines the desired state of EndpointMonitor
             properties:
               checkInterval:
+                maximum: 31536000
+                minimum: 1
                 type: integer
               dnsCheck:
                 properties:
@@ -52,6 +54,22 @@ spec:
                     type: string
                 type: object
               driver:
+                enum:
+                - http
+                - http-json
+                - smtp
+                - redis
+                - tls
+                - tcp
+                - dns
+                - ping
+                - trino
+                - opensearch
+                - mysql
+                - mariadb
+                - postgres
+                - mongodb
+                - scylladb
                 type: string
               endpoint:
                 type: string
@@ -67,12 +85,52 @@ spec:
                 properties:
                   expectedStatusCode:
                     type: integer
+                    x-kubernetes-validations:
+                    - message: must be an HTTP status code from 100 to 599
+                      rule: self == 0 || (self >= 100 && self <= 599)
                   jsonAssertions:
                     additionalProperties:
                       type: string
                     type: object
                 required:
                 - jsonAssertions
+                type: object
+              ipFamily:
+                description: |-
+                  IpFamily lists the address families to connect to the endpoint over.
+                  With ipv4 or ipv6 alone, every connection uses that family, connects
+                  directly, ignoring HTTP proxy settings, and redirects stay on that
+                  family. With both, each check runs over each family, fails if either
+                  fails, and reports the slower response time. Omit the field or leave
+                  it empty to leave the choice to the system. For the dns driver it
+                  applies to the connection to the DNS server.
+                items:
+                  enum:
+                  - ipv4
+                  - ipv6
+                  type: string
+                maxItems: 2
+                type: array
+                x-kubernetes-list-type: atomic
+                x-kubernetes-validations:
+                - message: must not list a family twice
+                  rule: self.all(f, self.exists_one(g, g == f))
+              mongodbCheck:
+                properties:
+                  maxSecondsBehindMaster:
+                    description: |-
+                      MaxSecondsBehindMaster, when set, expects a secondary and fails when
+                      its oplog is further behind the primary's than this.
+                    type: integer
+                  secretRef:
+                    properties:
+                      name:
+                        type: string
+                    required:
+                    - name
+                    type: object
+                  tls:
+                    type: boolean
                 type: object
               mysqlCheck:
                 properties:
@@ -94,6 +152,10 @@ spec:
                     properties:
                       alertOn:
                         items:
+                          enum:
+                          - success
+                          - failure
+                          - change
                           type: string
                         type: array
                       enabled:
@@ -105,15 +167,20 @@ spec:
                     - webhookUrl
                     type: object
                   email:
-                    description: EmailConfig is placeholder (no-op for now)
+                    description: EmailConfig sends alerts by SMTP or Amazon SES.
                     properties:
                       alertOn:
                         items:
+                          enum:
+                          - success
+                          - failure
+                          - change
                           type: string
                         type: array
                       body:
                         type: string
                       emailProvider:
+                        pattern: ^([sS][mM][tT][pP]|[sS][eE][sS])?$
                         type: string
                       emailSecretRef:
                         properties:
@@ -138,11 +205,19 @@ spec:
                     - enabled
                     - to
                     type: object
+                    x-kubernetes-validations:
+                    - message: from is required when emailProvider is ses
+                      rule: '!has(self.emailProvider) || self.emailProvider.lowerAscii()
+                        != ''ses'' || (has(self.from) && size(self.from) > 0)'
                   slack:
                     description: SlackConfig defines Slack notifier config
                     properties:
                       alertOn:
                         items:
+                          enum:
+                          - success
+                          - failure
+                          - change
                           type: string
                         type: array
                       enabled:
@@ -159,6 +234,7 @@ spec:
                     properties:
                       dashboards:
                         items:
+                          pattern: ^[^:]+$
                           type: string
                         type: array
                       db:
@@ -168,8 +244,10 @@ spec:
                       endpoint:
                         type: string
                       name:
+                        pattern: ^[^:]*$
                         type: string
                       retentionDays:
+                        minimum: 1
                         type: integer
                       secretRef:
                         properties:
@@ -190,6 +268,10 @@ spec:
                     properties:
                       alertOn:
                         items:
+                          enum:
+                          - success
+                          - failure
+                          - change
                           type: string
                         type: array
                       authorization:
@@ -212,6 +294,24 @@ spec:
                     - webhookUrl
                     type: object
                 type: object
+              postgresCheck:
+                properties:
+                  database:
+                    description: Database to log in to. Defaults to postgres.
+                    type: string
+                  maxSecondsBehindMaster:
+                    description: |-
+                      MaxSecondsBehindMaster, when set, expects a streaming replica and
+                      fails when it has fallen further behind than this.
+                    type: integer
+                  secretRef:
+                    properties:
+                      name:
+                        type: string
+                    required:
+                    - name
+                    type: object
+                type: object
               redisCheck:
                 properties:
                   secretRef:
@@ -223,6 +323,16 @@ spec:
                     type: object
                   tls:
                     type: boolean
+                type: object
+              scylladbCheck:
+                properties:
+                  secretRef:
+                    properties:
+                      name:
+                        type: string
+                    required:
+                    - name
+                    type: object
                 type: object
               smtpCheck:
                 properties:
@@ -265,12 +375,31 @@ spec:
               lastCheckedTime:
                 format: date-time
                 type: string
+              lastNotifiedStatus:
+                description: |-
+                  LastNotifiedStatus is the status whose change alert has been sent, or
+                  that needed none because no notifier subscribes to change. Empty means
+                  no change alert has gone out yet. Absent, as on objects written before
+                  this field existed, means lastStatus counts as announced.
+                type: string
+              lastNotifiedStatusChange:
+                description: LastNotifiedStatusChange is when the status in lastNotifiedStatus
+                  began.
+                format: date-time
+                type: string
               lastStatus:
                 type: string
               lastStatusChange:
                 format: date-time
                 type: string
+              observedGeneration:
+                description: ObservedGeneration is the spec generation the last check
+                  ran against.
+                format: int64
+                type: integer
             type: object
+        required:
+        - spec
         type: object
     served: true
     storage: true

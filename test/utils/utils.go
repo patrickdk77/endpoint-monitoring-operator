@@ -19,12 +19,15 @@ package utils
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	. "github.com/onsi/ginkgo/v2" //nolint:golint,revive
+	"sigs.k8s.io/yaml"
 )
 
 const (
@@ -40,8 +43,50 @@ func warnError(err error) {
 	_, _ = fmt.Fprintf(GinkgoWriter, "warning: %v\n", err)
 }
 
+// TestProfile is the minikube profile make test-e2e creates and deletes; it
+// must match E2E_PROFILE in the Makefile.
+const TestProfile = "endpoint-monitoring-operator-e2e"
+
+var testKubeconfig string
+
+// UseTestKubeconfig makes Run give every command the kubeconfig that
+// make test-e2e wrote for its throwaway minikube profile, and nothing else.
+// Until it succeeds, Run refuses to start any command.
+func UseTestKubeconfig() error {
+	path := os.Getenv("E2E_KUBECONFIG")
+	if path == "" {
+		return errors.New("E2E_KUBECONFIG is not set; run the e2e tests with make test-e2e, " +
+			"which creates a throwaway minikube cluster for them")
+	}
+	path, err := filepath.Abs(path)
+	if err != nil {
+		return fmt.Errorf("resolving the e2e kubeconfig path: %w", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("reading the e2e kubeconfig: %w", err)
+	}
+	var cfg struct {
+		CurrentContext string `json:"current-context"`
+	}
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return fmt.Errorf("parsing the e2e kubeconfig %s: %w", path, err)
+	}
+	if cfg.CurrentContext != TestProfile {
+		return fmt.Errorf("the e2e kubeconfig %s has current-context %q, not the minikube profile %q",
+			path, cfg.CurrentContext, TestProfile)
+	}
+	testKubeconfig = path
+	return nil
+}
+
 // Run executes the provided command within this context
 func Run(cmd *exec.Cmd) (string, error) {
+	command := strings.Join(cmd.Args, " ")
+	if testKubeconfig == "" {
+		return "", fmt.Errorf("refusing to run %s: the e2e test kubeconfig is not set", command)
+	}
+
 	dir, _ := GetProjectDir()
 	cmd.Dir = dir
 
@@ -49,8 +94,8 @@ func Run(cmd *exec.Cmd) (string, error) {
 		_, _ = fmt.Fprintf(GinkgoWriter, "chdir dir: %s\n", err)
 	}
 
-	cmd.Env = append(os.Environ(), "GO111MODULE=on")
-	command := strings.Join(cmd.Args, " ")
+	cmd.Env = append(os.Environ(), "GO111MODULE=on", "KUBECONFIG="+testKubeconfig,
+		"KUBECTL=kubectl", "MAKEFLAGS=", "MFLAGS=", "GNUMAKEFLAGS=", "MAKEFILES=")
 	_, _ = fmt.Fprintf(GinkgoWriter, "running: %s\n", command)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -165,14 +210,10 @@ func IsCertManagerCRDsInstalled() bool {
 	return false
 }
 
-// LoadImageToKindClusterWithName loads a local docker image to the kind cluster
-func LoadImageToKindClusterWithName(name string) error {
-	cluster := "kind"
-	if v, ok := os.LookupEnv("KIND_CLUSTER"); ok {
-		cluster = v
-	}
-	kindOptions := []string{"load", "docker-image", name, "--name", cluster}
-	cmd := exec.Command("kind", kindOptions...)
+// LoadImageToMinikube loads a local docker image into the minikube profile
+// that make test-e2e created for the tests.
+func LoadImageToMinikube(name string) error {
+	cmd := exec.Command("minikube", "-p", TestProfile, "image", "load", name)
 	_, err := Run(cmd)
 	return err
 }

@@ -8,21 +8,26 @@ import (
 
 type PingDriver struct {
 	endpoint string
+	family   string
 }
 
-func NewPingDriver(endpoint string) (Driver, error) {
+func NewPingDriver(endpoint, family string) (Driver, error) {
 	if endpoint == "" {
 		return nil, fmt.Errorf("endpoint cannot be empty")
 	}
+	if err := checkHostEndpoint(endpoint); err != nil {
+		return nil, err
+	}
 
-	return &PingDriver{endpoint: endpoint}, nil
+	return &PingDriver{endpoint: endpoint, family: family}, nil
 }
 
 func (p *PingDriver) Check() (*CheckResult, error) {
 	start := time.Now()
 
 	// Simple connectivity check
-	conn, err := net.DialTimeout("tcp", p.endpoint+":80", 5*time.Second)
+	host, port := hostPort(p.endpoint, "80")
+	conn, err := net.DialTimeout(familyNetwork("tcp", p.family), net.JoinHostPort(host, port), 5*time.Second)
 	duration := time.Since(start)
 
 	result := &CheckResult{
@@ -32,7 +37,7 @@ func (p *PingDriver) Check() (*CheckResult, error) {
 	if err != nil {
 		result.Success = false
 		result.Error = err
-		result.Message = fmt.Sprintf("Ping check failed: %v", err)
+		result.Message = fmt.Sprintf("Ping check failed: %s", errorText(err))
 		return result, nil
 	}
 

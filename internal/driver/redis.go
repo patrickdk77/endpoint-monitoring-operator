@@ -1,9 +1,12 @@
 package driver
 
 import (
+	"bufio"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"net"
+	"strconv"
 	"strings"
 	"time"
 
@@ -14,20 +17,27 @@ import (
 
 type REDISDriver struct {
 	endpoint string
-	auth     string
+	family   string
+	auth     []string
 	check    *v1.RedisCheck
 }
 
-func NewREDISDriver(endpoint string, check *v1.RedisCheck, namespace string, client client.Client) (Driver, error) {
+func NewREDISDriver(endpoint, family string, check *v1.RedisCheck, namespace string, client client.Client) (Driver, error) {
 	if endpoint == "" {
 		return nil, fmt.Errorf("endpoint cannot be empty")
 	}
+	if err := checkHostEndpoint(endpoint); err != nil {
+		return nil, err
+	}
+	if check == nil {
+		check = &v1.RedisCheck{}
+	}
 
-	var auth string
+	var auth []string
 	if check.SecretRef.Name != "" {
 		secret, err := notifier.GetSecret(check.SecretRef.Name, namespace, client)
 		if err != nil {
-			return nil, fmt.Errorf("unable to read secret: %s", err)
+			return nil, fmt.Errorf("unable to read secret: %w", err)
 		}
 
 		var username, password string
@@ -38,14 +48,15 @@ func NewREDISDriver(endpoint string, check *v1.RedisCheck, namespace string, cli
 			password = string(passwordSecret)
 		}
 		if password != "" {
-			auth = fmt.Sprintf("AUTH %s\r\n", password)
+			auth = []string{"AUTH", password}
 		}
 		if username != "" && password != "" {
-			auth = fmt.Sprintf("AUTH %s %s\r\n", username, password)
+			auth = []string{"AUTH", username, password}
 		}
 	}
 	return &REDISDriver{
 		endpoint: endpoint,
+		family:   family,
 		auth:     auth,
 		check:    check,
 	}, nil
@@ -56,46 +67,39 @@ func (t *REDISDriver) Check() (*CheckResult, error) {
 
 	var conn net.Conn
 	var err error
-	buffer := make([]byte, 1024)
 
-	hostPart, port, errSplit := net.SplitHostPort(t.endpoint)
-	if errSplit != nil {
-		hostPart = t.endpoint
-		port = ""
-	}
-	if port == "" {
-		port = "6379"
-	}
+	hostPart, port := hostPort(t.endpoint, "6379")
 	host := net.JoinHostPort(hostPart, port)
 
 	if t.check.Tls {
 		tlsConfig := &tls.Config{ServerName: hostPart}
 		dialer := &net.Dialer{Timeout: 10 * time.Second}
-		conn, err = tls.DialWithDialer(dialer, "tcp", host, tlsConfig)
+		var tlsConn *tls.Conn
+		tlsConn, err = tls.DialWithDialer(dialer, familyNetwork("tcp", t.family), host, tlsConfig)
+		if err == nil {
+			conn = tlsConn
+		}
 	} else {
-		host = net.JoinHostPort(host, port)
-		conn, err = net.DialTimeout("tcp", t.endpoint, 10*time.Second)
+		conn, err = net.DialTimeout(familyNetwork("tcp", t.family), host, 10*time.Second)
+	}
+	if conn != nil {
+		defer conn.Close()
 	}
 	if err == nil {
 		err = conn.SetDeadline(time.Now().Add(10 * time.Second))
 	}
-	if err == nil && t.auth != "" {
-		conn.Write([]byte(t.auth))
-		n, err := conn.Read(buffer)
-		if err == nil && (n < 2 || strings.HasPrefix(string(buffer[:n]), "+OK")) {
-			err = fmt.Errorf("unexpected auth response: size=%d, string=%s", n, string(buffer))
-		}
+	var r *bufio.Reader
+	if err == nil {
+		r = bufio.NewReaderSize(conn, 64<<10)
+	}
+	if err == nil && t.auth != nil {
+		err = redisCommand(conn, r, "+OK", t.auth...)
 	}
 	if err == nil {
-		conn.Write([]byte("PING\r\n"))
-		n, err := conn.Read(buffer)
-		if err == nil && (n < 4 || strings.HasPrefix(string(buffer[:n]), "+PONG")) {
-			err = fmt.Errorf("unexpected ping response: size=%d, string=%s", n, string(buffer))
-		}
+		err = redisCommand(conn, r, "+PONG", "PING")
 	}
-	if conn != nil {
-		conn.Write([]byte("QUIT\r\n"))
-		defer conn.Close()
+	if err == nil {
+		_, _ = conn.Write(redisEncode([]string{"QUIT"}))
 	}
 
 	duration := time.Since(start)
@@ -107,7 +111,7 @@ func (t *REDISDriver) Check() (*CheckResult, error) {
 	if err != nil {
 		result.Success = false
 		result.Error = err
-		result.Message = fmt.Sprintf("REDIS check failed: %v", err)
+		result.Message = fmt.Sprintf("REDIS check failed: %s", errorText(err))
 		return result, nil
 	}
 
@@ -115,6 +119,39 @@ func (t *REDISDriver) Check() (*CheckResult, error) {
 	result.Message = fmt.Sprintf("REDIS check successful (response time: %v)", duration)
 
 	return result, nil
+}
+
+func redisCommand(conn net.Conn, r *bufio.Reader, want string, args ...string) error {
+	if _, err := conn.Write(redisEncode(args)); err != nil {
+		return fmt.Errorf("%s: %w", args[0], err)
+	}
+	line, err := r.ReadSlice('\n')
+	if errors.Is(err, bufio.ErrBufferFull) {
+		return fmt.Errorf("%s: reply longer than 64 KiB", args[0])
+	}
+	if err != nil {
+		return fmt.Errorf("%s: %w", args[0], err)
+	}
+	reply := strings.TrimRight(string(line), "\r\n")
+	if reply == want {
+		return nil
+	}
+	if args[0] == "AUTH" {
+		reply, _, _ = strings.Cut(reply, " ")
+	}
+	if len(reply) > 128 {
+		reply = reply[:128] + "..."
+	}
+	return fmt.Errorf("%s: unexpected reply %q", args[0], reply)
+}
+
+func redisEncode(args []string) []byte {
+	var b strings.Builder
+	b.WriteString("*" + strconv.Itoa(len(args)) + "\r\n")
+	for _, arg := range args {
+		b.WriteString("$" + strconv.Itoa(len(arg)) + "\r\n" + arg + "\r\n")
+	}
+	return []byte(b.String())
 }
 
 func (t *REDISDriver) GetEndpoint() string {

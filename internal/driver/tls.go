@@ -12,48 +12,47 @@ import (
 
 type TLSDriver struct {
 	endpoint string
+	family   string
 	check    *v1.TlsCheck
 }
 
-func NewTLSDriver(endpoint string, check *v1.TlsCheck) (Driver, error) {
+func NewTLSDriver(endpoint, family string, check *v1.TlsCheck) (Driver, error) {
 	if endpoint == "" {
 		return nil, fmt.Errorf("endpoint cannot be empty")
 	}
+	if err := checkHostEndpoint(endpoint); err != nil {
+		return nil, err
+	}
+	if check == nil {
+		check = &v1.TlsCheck{}
+	}
 
-	return &TLSDriver{endpoint: endpoint, check: check}, nil
+	return &TLSDriver{endpoint: endpoint, family: family, check: check}, nil
+}
+
+func (t *TLSDriver) target() (addr, serverName, port string) {
+	host, port := hostPort(t.endpoint, "443")
+	serverName = host
+	if t.check.Host != "" {
+		serverName = t.check.Host
+	}
+	return net.JoinHostPort(host, port), serverName, port
 }
 
 func (t *TLSDriver) Check() (*CheckResult, error) {
 	start := time.Now()
 
+	addr, serverName, port := t.target()
 	dialer := &net.Dialer{Timeout: 10 * time.Second}
-	conn, err := tls.DialWithDialer(dialer, "tcp", t.endpoint, nil)
-	if err == nil {
-		hostPart, _, errSplit := net.SplitHostPort(t.endpoint)
-		if errSplit != nil {
-			hostPart = t.endpoint
-		}
-		if t.check.Host != "" {
-			hostPart = t.check.Host
-		}
-		err = conn.VerifyHostname(hostPart)
-	}
+	conn, err := tls.DialWithDialer(dialer, familyNetwork("tcp", t.family), addr, &tls.Config{ServerName: serverName})
 	if err == nil && t.check.DaysToExpire > 0 {
-		days := int(time.Until(conn.ConnectionState().PeerCertificates[0].NotAfter).Hours() / 24)
-		if days < t.check.DaysToExpire {
-			err = fmt.Errorf("cerificate expires in %d days, alert at under %d", days, t.check.DaysToExpire)
+		notAfter := conn.ConnectionState().PeerCertificates[0].NotAfter
+		if days := int(time.Until(notAfter).Hours() / 24); days < t.check.DaysToExpire {
+			err = fmt.Errorf("certificate expires at %s, within the %d-day alert window", notAfter.UTC().Format(time.RFC3339), t.check.DaysToExpire)
 		}
 	}
 	if err == nil {
-		hostPart, portPart, errSplit := net.SplitHostPort(t.endpoint)
-		if errSplit != nil {
-			hostPart = t.endpoint
-			portPart = "443"
-		}
-		if t.check.Host != "" {
-			hostPart = t.check.Host
-		}
-		err = common.ResolveAndVerifyDANE(hostPart, portPart, conn.ConnectionState().PeerCertificates)
+		err = common.ResolveAndVerifyDANE(serverName, port, conn.ConnectionState().PeerCertificates)
 	}
 	if conn != nil {
 		defer conn.Close()
@@ -68,7 +67,7 @@ func (t *TLSDriver) Check() (*CheckResult, error) {
 	if err != nil {
 		result.Success = false
 		result.Error = err
-		result.Message = fmt.Sprintf("TLS check failed: %v", err)
+		result.Message = fmt.Sprintf("TLS check failed: %s", errorText(err))
 		return result, nil
 	}
 

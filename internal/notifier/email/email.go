@@ -3,7 +3,9 @@ package email
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"net"
 	"net/smtp"
@@ -21,7 +23,9 @@ import (
 )
 
 type EmailNotifier struct {
-	cfg *v1alpha1.EmailConfig
+	cfg     *v1alpha1.EmailConfig
+	subject *template.Template
+	body    *template.Template
 }
 
 func New(cfg *v1alpha1.EmailConfig) (notifier.Notifier, error) {
@@ -30,6 +34,15 @@ func New(cfg *v1alpha1.EmailConfig) (notifier.Notifier, error) {
 	}
 
 	provider := strings.ToUpper(cfg.EmailProvider)
+	switch provider {
+	case "", "SMTP":
+	case "SES":
+		if cfg.From == "" {
+			return nil, fmt.Errorf("invalid email configuration: from field is required for ses")
+		}
+	default:
+		return nil, fmt.Errorf("unsupported emailProvider %q, must be smtp or ses", cfg.EmailProvider)
+	}
 	if cfg.EmailSecretRef.Name == "" && (provider == "" || provider == "SMTP") {
 		if provider == "" && cfg.Host == "" {
 			return nil, fmt.Errorf("email config is nil or missing Host or emailProvider")
@@ -46,7 +59,22 @@ func New(cfg *v1alpha1.EmailConfig) (notifier.Notifier, error) {
 		return nil, fmt.Errorf("invalid email configuration: to array is required")
 	}
 
-	return &EmailNotifier{cfg: cfg}, nil
+	e := &EmailNotifier{cfg: cfg}
+	if cfg.Subject != "" {
+		tmpl, err := template.New("subject").Parse(cfg.Subject)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse the subject template: %w", err)
+		}
+		e.subject = tmpl
+	}
+	if cfg.Body != "" {
+		tmpl, err := template.New("body").Parse(cfg.Body)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse the body template: %w", err)
+		}
+		e.body = tmpl
+	}
+	return e, nil
 }
 
 func (e *EmailNotifier) SendAlert(status string, values *notifier.NoticeValues, client client.Client) error {
@@ -55,43 +83,35 @@ func (e *EmailNotifier) SendAlert(status string, values *notifier.NoticeValues, 
 	}
 
 	var msg, subject string
-	if e.cfg.Subject == "" {
+	if e.subject == nil {
 		subject = values.AlertMessage
 	} else {
-		tmpl, err := template.New("subject").Parse(e.cfg.Subject)
-		if err != nil {
-			return fmt.Errorf("EMAIL: Failed to parse Subject Template: %s\n", err)
-		}
 		var buf bytes.Buffer
-		err = tmpl.Execute(&buf, values)
+		err := e.subject.Execute(&buf, values)
 		if err != nil {
-			return fmt.Errorf("EMAIL: Failed to solve Subject Template: %s\n", err)
+			return fmt.Errorf("failed to execute the subject template: %w", err)
 		}
 		subject = buf.String()
 	}
-	if e.cfg.Body == "" {
+	if e.body == nil {
 		msg = values.AlertMessage
 	} else {
-		tmpl, err := template.New("body").Parse(e.cfg.Body)
-		if err != nil {
-			return fmt.Errorf("EMAIL: Failed to parse Body Template: %s\n", err)
-		}
 		var buf bytes.Buffer
-		err = tmpl.Execute(&buf, values)
+		err := e.body.Execute(&buf, values)
 		if err != nil {
-			return fmt.Errorf("EMAIL: Failed to solve Body Template: %s\n", err)
+			return fmt.Errorf("failed to execute the body template: %w", err)
 		}
 		msg = buf.String()
 	}
 	provider := strings.ToUpper(e.cfg.EmailProvider)
 	if provider == "" || provider == "SMTP" {
 		if err := e.SendSMTP(subject, msg, values, client); err != nil {
-			return fmt.Errorf("EMAIL SMTP: Send failed, Returned %s\n", err)
+			return fmt.Errorf("smtp send failed: %w", err)
 		}
 	}
 	if provider == "SES" {
 		if err := e.SendSES(subject, msg, values); err != nil {
-			return fmt.Errorf("EMAIL SES: Send failed, Returned %s\n", err)
+			return fmt.Errorf("ses send failed: %w", err)
 		}
 	}
 	//fmt.Printf("EMAIL ALERT: Status=%s, To=%v, From=%s, Message=%s\n",
@@ -112,7 +132,7 @@ func (e *EmailNotifier) SendSMTP(subject string, msg string, values *notifier.No
 	if e.cfg.EmailSecretRef.Name != "" {
 		secret, err := notifier.GetSecret(e.cfg.EmailSecretRef.Name, values.Namespace, client)
 		if err != nil {
-			return fmt.Errorf("unable to read secret: %s\n", err)
+			return fmt.Errorf("unable to read secret: %w", err)
 		}
 
 		var identity, username, password string
@@ -148,16 +168,17 @@ func (e *EmailNotifier) SendSMTP(subject string, msg string, values *notifier.No
 
 	body := []byte(
 		"From: " + from + "\r\n" +
-			"To: " + from + "\r\n" +
+			"To: " + strings.Join(e.cfg.To, ", ") + "\r\n" +
 			"Date: " + time.Now().Format(time.RFC1123Z) + "\r\n" +
 			"Subject: " + escapeUTF8(subject) + "\r\n\r\n" +
 			strings.ReplaceAll(msg, "\n", "\r\n") + "\r\n")
 
-	return smtp.SendMail(host, auth, from, e.cfg.To, body)
+	return sendMail(host, auth, from, e.cfg.To, body)
 }
 
 func (e *EmailNotifier) SendSES(subject string, msg string, values *notifier.NoticeValues) error {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), notifier.Timeout)
+	defer cancel()
 	sdkcfg, err := config.LoadDefaultConfig(ctx)
 	if err != nil {
 		return err
@@ -204,4 +225,79 @@ func escapeUTF8(s string) string {
 		}
 	}
 	return s
+}
+
+// sendMail is smtp.SendMail with one deadline for the dial and the whole
+// conversation. Unlike smtp.SendMail, it refuses to send when credentials
+// are set and the server offers no AUTH.
+func sendMail(addr string, a smtp.Auth, from string, to []string, msg []byte) error {
+	if err := validateLine(from); err != nil {
+		return err
+	}
+	for _, recp := range to {
+		if err := validateLine(recp); err != nil {
+			return err
+		}
+	}
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return err
+	}
+	deadline := time.Now().Add(notifier.Timeout)
+	dialer := net.Dialer{Deadline: deadline}
+	conn, err := dialer.Dial("tcp", addr)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	if err := conn.SetDeadline(deadline); err != nil {
+		return err
+	}
+	c, err := smtp.NewClient(conn, host)
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+	if err = c.Hello("localhost"); err != nil {
+		return err
+	}
+	if ok, _ := c.Extension("STARTTLS"); ok {
+		if err = c.StartTLS(&tls.Config{ServerName: host}); err != nil {
+			return err
+		}
+	}
+	if a != nil {
+		if ok, _ := c.Extension("AUTH"); !ok {
+			return errors.New("smtp: server doesn't support AUTH")
+		}
+		if err = c.Auth(a); err != nil {
+			return err
+		}
+	}
+	if err = c.Mail(from); err != nil {
+		return err
+	}
+	for _, addr := range to {
+		if err = c.Rcpt(addr); err != nil {
+			return err
+		}
+	}
+	w, err := c.Data()
+	if err != nil {
+		return err
+	}
+	if _, err = w.Write(msg); err != nil {
+		return err
+	}
+	if err = w.Close(); err != nil {
+		return err
+	}
+	return c.Quit()
+}
+
+func validateLine(line string) error {
+	if strings.ContainsAny(line, "\n\r") {
+		return errors.New("smtp: A line must not contain CR or LF")
+	}
+	return nil
 }

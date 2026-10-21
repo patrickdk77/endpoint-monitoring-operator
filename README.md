@@ -1,8 +1,8 @@
 # Endpoint-Monitoring Operator
 
-> A lightweight, extensible Kubernetes Operator that probes *any* endpoint-HTTP/JSON, TCP, DNS, ICMP, Trino, OpenSearch, and more-and routes alerts to Slack or e-mail with a simple Custom Resource.  
+> A Kubernetes operator that checks HTTP and JSON endpoints, TCP ports, DNS, TLS certificates, SMTP, Redis, MySQL, MariaDB, PostgreSQL, MongoDB, ScyllaDB, Trino and OpenSearch from inside your cluster, and sends alerts to Slack, Discord, e-mail or a webhook. Each check is one EndpointMonitor resource.
 
-![Go](https://img.shields.io/badge/Go-%3E%3D1.23-blue?logo=go)
+![Go](https://img.shields.io/badge/Go-%3E%3D1.27.2-blue?logo=go)
 ![License](https://img.shields.io/github/license/LiciousTech/endpoint-monitoring-operator)
 
 ---
@@ -13,8 +13,8 @@ Traditional uptime checkers only tell you if a port is open. **Endpoint-Monitori
 
 * Hit real business URLs such as `/v1/status` that are not exposed publicly.  
 * Assert deep JSON fields, not just `HTTP 200`.  
-* Validate distributed systems (Trino, OpenSearch) and network primitives (DNS, TCP, Ping).  
-* Deliver alerts through pluggable notifiers (Slack today, e-mail and PagerDuty soon). :contentReference[oaicite:0]{index=0}
+* Check Trino and OpenSearch cluster state, DNS answers, TCP ports and TLS certificates.
+* Send alerts to Slack, Discord, e-mail (SMTP or SES) or any webhook, and record results in Valkey for a status page.
 
 ---
 
@@ -22,18 +22,23 @@ Traditional uptime checkers only tell you if a port is open. **Endpoint-Monitori
 
 | Driver        | Typical use-case                                   |
 |---------------|----------------------------------------------------|
-| `http`        | Basic status-code check (200/302/…​)               |
+| `http`        | Any 2xx after following redirects; optional body match and certificate expiry |
 | `http-json`   | Validate JSON payload & status code                |
 | `tcp`         | Verify a service is listening on a port            |
 | `dns`         | Ensure a domain resolves to expected IP(s)         |
-| `ping`        | Simple ICMP reachability                           |
+| `ping`        | TCP connect to port 80, or the port in the endpoint; not ICMP |
 | `trino`       | Confirm Trino coordinator is *READY*               |
-| `opensearch`  | Check cluster health is `green` / `yellow`         |
-| `smtp`        | Verify a smtp is listening on a port               |
-| `redis`       | Verify redis is listening and responds on a port   |
-| `tls`         | Verify tls certificate is on a port                |
+| `opensearch`  | Cluster health is `green`; `yellow` and `red` fail |
+| `smtp`        | SMTP greeting, with optional HELO, STARTTLS or TLS, AUTH, VRFY, MAIL FROM and RCPT TO |
+| `redis`       | PING answered with PONG, after AUTH if the secret holds a password |
+| `tls`         | TLS handshake with certificate verification, and an optional expiry window |
+| `mysql`       | Log in, check read_only, connection count, replica lag |
+| `mariadb`     | The `mysql` checks against a MariaDB server        |
+| `postgres`    | Log in; a primary must be writable, a replica streaming and within its lag |
+| `mongodb`     | Log in; a primary must be writable, a secondary within its replication lag |
+| `scylladb`    | Log in over CQL, without TLS; the node must report bootstrapped COMPLETED |
 
-Adding a new driver or notifier is only a few lines-everything is wired through a Factory pattern. :contentReference[oaicite:1]{index=1}
+`pkg/factory/factory.go` builds every driver and notifier. CONTRIBUTING.md lists the steps for adding one.
 
 ---
 
@@ -68,7 +73,8 @@ Key fields in the spec (abridged):
 driver - which probe implementation to use
 endpoint - URL/host/cluster depending on driver
 checkInterval - seconds between probes
-notify - list of one or more notifiers (Slack, e-mail)
+ipFamily - optional list; [ipv4] or [ipv6] probes over that family only (direct, no HTTP proxy), [ipv4, ipv6] probes over both and fails if either fails
+notify - one or more notifiers: slack, email, discord, webhook, valkey
 Driver-specific blocks - e.g. httpJsonCheck for http-json driver
 ```
 
@@ -105,12 +111,14 @@ notify:
     dashboards:
       - platform
     name: api-status          # optional; keep identical across locations
-    retentionDays: 90
+    retentionDays: 7
     secretRef:
       name: valkey-credentials  # keys: username (optional), password
 ```
 
 Deploy one Valkey instance per monitoring location. Operators are location-agnostic; the dashboard app names each Valkey server as a location. Use the same `name` (or monitor name) and `dashboards` across locations for a service to aggregate correctly.
+
+`name` and each dashboard name must not contain `:`, because the Valkey keys use it as a separator. `retentionDays` is how long each raw check sample is kept; it must be at least 1 and defaults to 7. The dashboard builds hourly and daily rollups from these samples and keeps those for its own, longer retention.
 
 ---
 
@@ -170,11 +178,11 @@ kubectl apply -f dashboard/deploy/config.yaml -f dashboard/deploy/deployment.yam
 
 ## Roadmap
 
-* 🔌 Additional notifiers: PagerDuty, OpsGenie, Webhook
-* 🗄️ Persistent metrics export (Prometheus CRD)
-* 🕵🏻‍♂️ Synthetic transaction scripts (e.g., login + checkout)
-* 🔑 Secretless credentials via CSI Drivers
-* ➕ **New drivers:** Redis, MySQL, Kafka
+* Additional notifiers: PagerDuty, OpsGenie
+* Persistent metrics export (Prometheus CRD)
+* Synthetic transaction scripts (e.g., login + checkout)
+* Secretless credentials via CSI Drivers
+* **New drivers:** Kafka
 
 Feel free to open an Issue or Pull Request!
 
@@ -183,7 +191,7 @@ Feel free to open an Issue or Pull Request!
 2. Create a feature branch
 3. Run make test and golangci-lint run
 
-Submit a PR-all contributions welcome!
+Submit a PR. All contributions welcome!
 See CONTRIBUTING.md for details.
 
 

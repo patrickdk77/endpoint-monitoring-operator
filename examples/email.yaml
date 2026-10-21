@@ -15,7 +15,7 @@ stringData:
 apiVersion: monitoring.licious.app/v1alpha1
 kind: EndpointMonitor
 metadata:
-  name: rds-mysql-tcp-check
+  name: rds-mysql-tcp-email-check
   namespace: endpoint-monitoring-operator-system
 spec:
   driver: tcp

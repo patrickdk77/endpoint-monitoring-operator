@@ -51,10 +51,7 @@ func main() {
 		log.Fatalf("server: %v", err)
 	}
 
-	httpServer := &http.Server{
-		Addr:    cfg.HTTPAddr,
-		Handler: srv.Handler(),
-	}
+	httpServer := newHTTPServer(cfg.HTTPAddr, srv.Handler())
 
 	go func() {
 		log.Printf("listening on %s", cfg.HTTPAddr)
@@ -67,4 +64,12 @@ func main() {
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer shutdownCancel()
 	_ = httpServer.Shutdown(shutdownCtx)
+}
+
+func newHTTPServer(addr string, handler http.Handler) *http.Server {
+	return &http.Server{
+		Addr:              addr,
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
+	}
 }

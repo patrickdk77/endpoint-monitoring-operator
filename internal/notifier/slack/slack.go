@@ -40,15 +40,15 @@ func (s *SlackNotifier) SendAlert(status string, values *notifier.NoticeValues, 
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", version.UserAgent)
-	httpClient := &http.Client{}
+	httpClient := &http.Client{Timeout: notifier.Timeout}
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send slack alert: %w", err)
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != 200 {
-		return fmt.Errorf("non-200 response from slack: %s", resp.Status)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("non-2xx response from slack: %s", resp.Status)
 	}
 
 	return nil

@@ -18,14 +18,14 @@
         <div class="card">
           <div class="card-head">
             <strong><a href="/{{$.Name}}/{{.ID}}">{{.Display}}</a></strong>
-            <span class="status status-{{.Status}}">{{.Status}}</span>
+            <span class="status status-{{.Status}}">{{formatStatus .Status}}</span>
           </div>
           <div class="timeline" title="Last {{len .Daily}} days">
-            {{range .Daily}}<div class="bar {{barClass .Status .Date}}" title="{{.Label}}: {{.Status}}"></div>{{end}}
+            {{range .Daily}}<div class="bar {{barClass .Status .Date}}{{if .Color}} bar-shaded{{end}}"{{with .Color}} style="--shade: {{.}}"{{end}} title="{{.Label}}: {{if .Total}}{{.Uptime}} ({{.Failed}} of {{.Total}} failed){{else}}no data{{end}}"></div>{{end}}
           </div>
           <div class="card-foot">
             <span class="meta">{{.Meta.Driver}} · {{.Meta.Endpoint}}</span>
-            <span class="sla" title="Uptime over last {{len .Daily}} days">{{formatSLA .SLA}}</span>
+            <span class="sla" title="Uptime over the last 30 days">{{formatSLA .SLA}}</span>
           </div>
         </div>
         {{end}}

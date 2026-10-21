@@ -1,8 +1,9 @@
 package driver
 
 import (
+	"crypto/tls"
+	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -18,16 +19,25 @@ type HTTPDriver struct {
 	httpCheck *v1.HttpCheck
 }
 
-func NewHTTPDriver(endpoint string, check *v1.TlsCheck, httpCheck *v1.HttpCheck) (Driver, error) {
+func NewHTTPDriver(endpoint, family string, check *v1.TlsCheck, httpCheck *v1.HttpCheck) (Driver, error) {
 	if endpoint == "" {
 		return nil, fmt.Errorf("endpoint cannot be empty")
 	}
 
+	client := httpClient(family, 30*time.Second)
+	if check != nil && check.Host != "" {
+		transport, ok := client.Transport.(*http.Transport)
+		if !ok {
+			transport = http.DefaultTransport.(*http.Transport).Clone()
+		}
+		transport.TLSClientConfig = &tls.Config{ServerName: check.Host}
+		transport.DisableKeepAlives = true
+		client.Transport = transport
+	}
+
 	return &HTTPDriver{
-		endpoint: endpoint,
-		client: &http.Client{
-			Timeout: 30 * time.Second,
-		},
+		endpoint:  endpoint,
+		client:    client,
 		check:     check,
 		httpCheck: httpCheck,
 	}, nil
@@ -51,13 +61,10 @@ func (h *HTTPDriver) Check() (*CheckResult, error) {
 
 	if err == nil && resp != nil && resp.TLS != nil && h.check != nil && len(resp.TLS.PeerCertificates) > 0 {
 		if h.check.DaysToExpire > 0 {
-			days := int(time.Until(resp.TLS.PeerCertificates[0].NotAfter).Hours() / 24)
-			if days < h.check.DaysToExpire {
-				err = fmt.Errorf("certificate expires in %d days, alert at under %d", days, h.check.DaysToExpire)
+			notAfter := resp.TLS.PeerCertificates[0].NotAfter
+			if days := int(time.Until(notAfter).Hours() / 24); days < h.check.DaysToExpire {
+				err = fmt.Errorf("certificate expires at %s, within the %d-day alert window", notAfter.UTC().Format(time.RFC3339), h.check.DaysToExpire)
 			}
-		}
-		if err == nil && h.check.Host != "" {
-			err = resp.TLS.PeerCertificates[0].VerifyHostname(h.check.Host)
 		}
 	}
 
@@ -68,22 +75,26 @@ func (h *HTTPDriver) Check() (*CheckResult, error) {
 	if err != nil {
 		result.Success = false
 		result.Error = err
-		result.Message = fmt.Sprintf("HTTP check failed: %v", err)
+		result.Message = fmt.Sprintf("HTTP check failed: %s", errorText(err))
 		return result, nil
 	}
 
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		if h.httpCheck != nil && h.httpCheck.BodyContains != "" {
-			bodyBytes, err := io.ReadAll(resp.Body)
-			if err != nil {
+			bodyBytes, err := readBody(resp.Body)
+			if err != nil && !errors.Is(err, errBodyTooLarge) {
 				result.Success = false
 				result.Error = err
-				result.Message = fmt.Sprintf("HTTP check failed to read body: %v", err)
+				result.Message = fmt.Sprintf("HTTP check failed to read body: %s", errorText(err))
 				return result, nil
 			}
 			if !strings.Contains(string(bodyBytes), h.httpCheck.BodyContains) {
+				where := "body"
+				if err != nil {
+					where = "the first 1 MiB of the body"
+				}
 				result.Success = false
-				result.Message = fmt.Sprintf("HTTP check failed: body does not contain '%s' (status: %d, response time: %v)", h.httpCheck.BodyContains, resp.StatusCode, duration)
+				result.Message = fmt.Sprintf("HTTP check failed: %s does not contain '%s' (status: %d)", where, h.httpCheck.BodyContains, resp.StatusCode)
 				return result, nil
 			}
 		}
@@ -92,7 +103,7 @@ func (h *HTTPDriver) Check() (*CheckResult, error) {
 		result.Message = fmt.Sprintf("HTTP check successful (status: %d, response time: %v)", resp.StatusCode, duration)
 	} else {
 		result.Success = false
-		result.Message = fmt.Sprintf("HTTP check failed (status: %d, response time: %v)", resp.StatusCode, duration)
+		result.Message = fmt.Sprintf("HTTP check failed (status: %d)", resp.StatusCode)
 	}
 
 	return result, nil

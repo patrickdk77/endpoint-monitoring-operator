@@ -19,6 +19,6 @@ spec:
       # Overrides the service identity stored in Valkey (keys + dashboard display name).
       # Keep identical across locations so the same logical service aggregates together.
       name: api-status
-      retentionDays: 90
+      retentionDays: 7
       secretRef:
         name: valkey-credentials

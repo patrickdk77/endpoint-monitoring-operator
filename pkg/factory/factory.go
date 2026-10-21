@@ -29,14 +29,14 @@ func (f *NotifierFactory) CreateNotifier(config *v1alpha1.NotifyConfig) (notifie
 		return nil, fmt.Errorf("notify config is nil")
 	}
 
-	var notifiers []notifier.Notifier
+	var notifiers []namedNotifier
 
 	if config.Slack != nil && config.Slack.Enabled {
 		slackNotifier, err := slack.New(config.Slack)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create Slack notifier: %w", err)
 		}
-		notifiers = append(notifiers, slackNotifier)
+		notifiers = append(notifiers, namedNotifier{"slack", slackNotifier})
 	}
 
 	if config.Email != nil && config.Email.Enabled {
@@ -44,7 +44,7 @@ func (f *NotifierFactory) CreateNotifier(config *v1alpha1.NotifyConfig) (notifie
 		if err != nil {
 			return nil, fmt.Errorf("failed to create Email notifier: %w", err)
 		}
-		notifiers = append(notifiers, emailNotifier)
+		notifiers = append(notifiers, namedNotifier{"email", emailNotifier})
 	}
 
 	if config.Discord != nil && config.Discord.Enabled {
@@ -52,7 +52,7 @@ func (f *NotifierFactory) CreateNotifier(config *v1alpha1.NotifyConfig) (notifie
 		if err != nil {
 			return nil, fmt.Errorf("failed to create Discord notifier: %w", err)
 		}
-		notifiers = append(notifiers, discordNotifier)
+		notifiers = append(notifiers, namedNotifier{"discord", discordNotifier})
 	}
 
 	if config.Webhook != nil && config.Webhook.Enabled {
@@ -60,7 +60,7 @@ func (f *NotifierFactory) CreateNotifier(config *v1alpha1.NotifyConfig) (notifie
 		if err != nil {
 			return nil, fmt.Errorf("failed to create Webhook notifier: %w", err)
 		}
-		notifiers = append(notifiers, webhookNotifier)
+		notifiers = append(notifiers, namedNotifier{"webhook", webhookNotifier})
 	}
 
 	if config.Valkey != nil && config.Valkey.Enabled {
@@ -68,7 +68,7 @@ func (f *NotifierFactory) CreateNotifier(config *v1alpha1.NotifyConfig) (notifie
 		if err != nil {
 			return nil, fmt.Errorf("failed to create Valkey notifier: %w", err)
 		}
-		notifiers = append(notifiers, valkeyNotifier)
+		notifiers = append(notifiers, namedNotifier{"valkey", valkeyNotifier})
 	}
 
 	if len(notifiers) == 0 {
@@ -78,21 +78,41 @@ func (f *NotifierFactory) CreateNotifier(config *v1alpha1.NotifyConfig) (notifie
 	return &CompositeNotifier{notifiers: notifiers}, nil
 }
 
+type namedNotifier struct {
+	name string
+	notifier.Notifier
+}
+
 // CompositeNotifier handles multiple notification channels
 type CompositeNotifier struct {
-	notifiers []notifier.Notifier
+	notifiers []namedNotifier
+}
+
+// SendError lists the notifiers that failed to send an alert.
+type SendError struct {
+	Notifiers []string
+	Errs      []error
+}
+
+func (e *SendError) Error() string {
+	return fmt.Sprintf("failed to send alerts: %v", e.Errs)
+}
+
+func (e *SendError) Unwrap() []error {
+	return e.Errs
 }
 
 // SendAlert sends alerts to all configured notifiers
 func (c *CompositeNotifier) SendAlert(status string, values *notifier.NoticeValues, client client.Client) error {
-	var errs []error
+	var failed SendError
 	for _, n := range c.notifiers {
 		if err := n.SendAlert(status, values, client); err != nil {
-			errs = append(errs, err)
+			failed.Notifiers = append(failed.Notifiers, n.name)
+			failed.Errs = append(failed.Errs, err)
 		}
 	}
-	if len(errs) > 0 {
-		return fmt.Errorf("failed to send alerts: %v", errs)
+	if len(failed.Errs) > 0 {
+		return &failed
 	}
 	return nil
 }
@@ -108,29 +128,69 @@ func NewDriver(driverType string, endpoint string, monitor *v1alpha1.EndpointMon
 
 // CreateDriver implements the factory pattern for drivers
 func (f *DriverFactory) CreateDriver(driverType string, endpoint string, monitor *v1alpha1.EndpointMonitor, namespace string, client client.Client) (driver.Driver, error) {
+	var ipv4, ipv6 bool
+	for _, family := range monitor.Spec.IpFamily {
+		switch family {
+		case driver.FamilyIPv4:
+			ipv4 = true
+		case driver.FamilyIPv6:
+			ipv6 = true
+		default:
+			return nil, fmt.Errorf("unsupported ipFamily: %s", family)
+		}
+	}
+	switch {
+	case ipv4 && ipv6:
+		v4, err := f.createFamilyDriver(driverType, endpoint, driver.FamilyIPv4, monitor, namespace, client)
+		if err != nil {
+			return nil, err
+		}
+		v6, err := f.createFamilyDriver(driverType, endpoint, driver.FamilyIPv6, monitor, namespace, client)
+		if err != nil {
+			return nil, err
+		}
+		return driver.NewBothFamiliesDriver(v4, v6), nil
+	case ipv4:
+		return f.createFamilyDriver(driverType, endpoint, driver.FamilyIPv4, monitor, namespace, client)
+	case ipv6:
+		return f.createFamilyDriver(driverType, endpoint, driver.FamilyIPv6, monitor, namespace, client)
+	default:
+		return f.createFamilyDriver(driverType, endpoint, "", monitor, namespace, client)
+	}
+}
+
+func (f *DriverFactory) createFamilyDriver(driverType, endpoint, family string, monitor *v1alpha1.EndpointMonitor, namespace string, client client.Client) (driver.Driver, error) {
 	switch driverType {
 	case "http":
-		return driver.NewHTTPDriver(endpoint, monitor.Spec.TlsCheck, monitor.Spec.HttpCheck)
+		return driver.NewHTTPDriver(endpoint, family, monitor.Spec.TlsCheck, monitor.Spec.HttpCheck)
 	case "http-json":
-		return driver.NewHTTPJSONDriver(endpoint, monitor.Spec.HttpJsonCheck)
+		return driver.NewHTTPJSONDriver(endpoint, family, monitor.Spec.HttpJsonCheck)
 	case "smtp":
-		return driver.NewSMTPDriver(endpoint, monitor.Spec.SmtpCheck, namespace, client)
+		return driver.NewSMTPDriver(endpoint, family, monitor.Spec.SmtpCheck, namespace, client)
 	case "redis":
-		return driver.NewREDISDriver(endpoint, monitor.Spec.RedisCheck, namespace, client)
+		return driver.NewREDISDriver(endpoint, family, monitor.Spec.RedisCheck, namespace, client)
 	case "tls":
-		return driver.NewTLSDriver(endpoint, monitor.Spec.TlsCheck)
+		return driver.NewTLSDriver(endpoint, family, monitor.Spec.TlsCheck)
 	case "tcp":
-		return driver.NewTCPDriver(endpoint)
+		return driver.NewTCPDriver(endpoint, family)
 	case "dns":
-		return driver.NewDNSDriver(endpoint, monitor.Spec.DnsCheck)
+		return driver.NewDNSDriver(endpoint, family, monitor.Spec.DnsCheck)
 	case "ping":
-		return driver.NewPingDriver(endpoint)
+		return driver.NewPingDriver(endpoint, family)
 	case "trino":
-		return driver.NewTrinoDriver(endpoint)
+		return driver.NewTrinoDriver(endpoint, family)
 	case "opensearch":
-		return driver.NewOpenSearchDriver(endpoint)
+		return driver.NewOpenSearchDriver(endpoint, family)
 	case "mysql":
-		return driver.NewMYSQLDriver(endpoint, monitor.Spec.MysqlCheck, namespace, client)
+		return driver.NewMYSQLDriver(endpoint, family, monitor.Spec.MysqlCheck, namespace, client)
+	case "mariadb":
+		return driver.NewMariaDBDriver(endpoint, family, monitor.Spec.MysqlCheck, namespace, client)
+	case "postgres":
+		return driver.NewPostgresDriver(endpoint, family, monitor.Spec.PostgresCheck, namespace, client)
+	case "mongodb":
+		return driver.NewMongoDBDriver(endpoint, family, monitor.Spec.MongodbCheck, namespace, client)
+	case "scylladb":
+		return driver.NewScyllaDBDriver(endpoint, family, monitor.Spec.ScylladbCheck, namespace, client)
 	default:
 		return nil, fmt.Errorf("unsupported driver type: %s", driverType)
 	}

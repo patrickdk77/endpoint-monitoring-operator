@@ -1,0 +1,33 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: mongodb-credentials
+  namespace: endpoint-monitoring-operator-system
+type: Opaque
+stringData:
+  username: monitor
+  password: changeme
+---
+apiVersion: monitoring.licious.app/v1alpha1
+kind: EndpointMonitor
+metadata:
+  name: mongodb-check
+  namespace: endpoint-monitoring-operator-system
+spec:
+  driver: mongodb
+  endpoint: mongodb.example.com:27017
+  checkInterval: 60
+  mongodbCheck:
+    # tls: true
+    secretRef:
+      name: mongodb-credentials
+    # Optionally, expect a secondary and fail when it is more than this
+    # many seconds behind the primary. The login needs the clusterMonitor
+    # role to run replSetGetStatus.
+    # maxSecondsBehindMaster: 60
+  notify:
+    slack:
+      enabled: true
+      webhookUrl: https://hooks.slack.com/services/XXXXXXXXX/YYYYYYYYY/ZZZZZZZZZZZZ
+      alertOn:
+        - failure
