@@ -33,6 +33,11 @@ type EndpointMonitorReconciler struct {
 	client.Client
 	Scheme   *runtime.Scheme
 	Recorder events.EventRecorder
+	// Retries resends alerts that failed in a way a later try may not
+	// repeat; nil sends each alert once.
+	Retries *AlertRetries
+	// APIReader reads monitors past the cache; nil reads through Client.
+	APIReader client.Reader
 	// MaxConcurrentReconciles is the most monitors checked at once; values
 	// below 1 mean 1.
 	MaxConcurrentReconciles int
@@ -49,6 +54,7 @@ func (r *EndpointMonitorReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	var monitor monitorv1alpha1.EndpointMonitor
 	if err := r.Get(ctx, req.NamespacedName, &monitor); err != nil {
 		if apierrors.IsNotFound(err) {
+			r.Retries.Stop(req.NamespacedName)
 			logger.Info("EndpointMonitor resource not found. Ignoring since object must be deleted.")
 			return ctrl.Result{}, nil
 		}
@@ -74,6 +80,12 @@ func (r *EndpointMonitorReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 			"nextCheckDue", nextCheckTime,
 			"requeueAfter", requeueAfter)
 		return ctrl.Result{RequeueAfter: requeueAfter}, nil
+	}
+
+	if r.Retries.Stop(req.NamespacedName) {
+		if err := r.reader().Get(ctx, req.NamespacedName, &monitor); err != nil {
+			return ctrl.Result{}, client.IgnoreNotFound(err)
+		}
 	}
 
 	retry := min(checkInterval, setupRetry)
@@ -140,7 +152,9 @@ func (r *EndpointMonitorReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	noticeValues.AlertMessage = fmt.Sprintf("%s monitor for %s is %s\n%s", noticeValues.Driver, noticeValues.Endpoint, noticeValues.Healthy, noticeValues.Message)
 
 	if err := notifier.SendAlert(noticeValues.Status, &noticeValues, r.Client); err != nil {
-		r.alertFailed(ctx, &monitor, noticeValues.Status, err)
+		if rest := r.queueRetries(ctx, &monitor, noticeValues.Status, noticeValues, err, nil); rest != nil {
+			r.alertFailed(ctx, &monitor, noticeValues.Status, rest)
+		}
 	}
 
 	if notified != noticeValues.Status {
@@ -148,7 +162,10 @@ func (r *EndpointMonitorReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		changeValues.LastStatus = notified
 		setStatusPeriod(&changeValues, notifiedSince, monitor.Status.LastStatusChange.Time)
 		if err := notifier.SendAlert("change", &changeValues, r.Client); err != nil {
-			r.alertFailed(ctx, &monitor, "change", err)
+			change := &announced{status: noticeValues.Status, since: monitor.Status.LastStatusChange}
+			if rest := r.queueRetries(ctx, &monitor, "change", changeValues, err, change); rest != nil {
+				r.alertFailed(ctx, &monitor, "change", rest)
+			}
 		} else {
 			status := noticeValues.Status
 			monitor.Status.LastNotifiedStatus = &status

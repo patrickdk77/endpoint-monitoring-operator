@@ -1,6 +1,8 @@
 package webhook
 
 import (
+	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -53,6 +55,10 @@ func TestWebhookReportsTemplateAndSecretErrors(t *testing.T) {
 			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
 				t.Fatalf("err = %v, want %q", err, tc.wantErr)
 			}
+			var temporary *notifier.RetryableError
+			if errors.As(err, &temporary) {
+				t.Fatalf("err = %v is marked retryable", err)
+			}
 			if hits.Load() != 0 {
 				t.Fatalf("the webhook was called %d times", hits.Load())
 			}
@@ -86,5 +92,54 @@ func TestWebhookAcceptsAny2xx(t *testing.T) {
 				t.Fatalf("status %d contents %q: err=%v hits=%d", tc.code, contents, err, hits.Load())
 			}
 		}
+	}
+}
+
+func TestWebhookMarksOnly429And5xxRetryable(t *testing.T) {
+	for _, tc := range []struct {
+		code      int
+		retryable bool
+	}{
+		{http.StatusTooManyRequests, true}, {http.StatusInternalServerError, true}, {http.StatusBadGateway, true},
+		{http.StatusServiceUnavailable, true}, {http.StatusGatewayTimeout, true},
+		{http.StatusNotModified, false}, {http.StatusBadRequest, false}, {http.StatusUnauthorized, false},
+		{http.StatusForbidden, false}, {http.StatusNotFound, false}, {http.StatusRequestEntityTooLarge, false},
+	} {
+		url, _ := hook(t, tc.code)
+		n, err := New(&v1alpha1.WebhookConfig{Enabled: true, WebhookURL: url})
+		if err != nil {
+			t.Fatal(err)
+		}
+		err = n.SendAlert("failure", &notifier.NoticeValues{Status: "failure"}, nil)
+		var temporary *notifier.RetryableError
+		if err == nil || errors.As(err, &temporary) != tc.retryable {
+			t.Fatalf("status %d: err = %v, want retryable %v", tc.code, err, tc.retryable)
+		}
+	}
+}
+
+func TestWebhookMarksARequestThatDoesNotCompleteRetryable(t *testing.T) {
+	ln, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ln.Close() })
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			c.Close()
+		}
+	}()
+	n, err := New(&v1alpha1.WebhookConfig{Enabled: true, WebhookURL: "http://" + ln.Addr().String() + "/"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = n.SendAlert("failure", &notifier.NoticeValues{Status: "failure"}, nil)
+	var temporary *notifier.RetryableError
+	if !errors.As(err, &temporary) {
+		t.Fatalf("err = %v, want it marked retryable", err)
 	}
 }

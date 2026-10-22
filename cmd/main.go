@@ -210,6 +210,9 @@ func main() {
 		Client:   mgr.GetClient(),
 		Scheme:   mgr.GetScheme(),
 		Recorder: mgr.GetEventRecorder("endpointmonitor-controller"),
+		Retries:  controller.NewAlertRetries(),
+
+		APIReader: mgr.GetAPIReader(),
 
 		MaxConcurrentReconciles: maxConcurrentReconciles,
 	}).SetupWithManager(mgr); err != nil {

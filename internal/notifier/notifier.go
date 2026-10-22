@@ -19,6 +19,16 @@ type Notifier interface {
 	SendAlert(status string, values *NoticeValues, client client.Client) error
 }
 
+// RetryableError marks a failed alert that a later try may deliver: the
+// request did not complete, or the server answered 429 or 5xx.
+type RetryableError struct {
+	Err error
+}
+
+func (e *RetryableError) Error() string { return e.Err.Error() }
+
+func (e *RetryableError) Unwrap() error { return e.Err }
+
 type NoticeValues struct {
 	Status           string
 	Endpoint         string

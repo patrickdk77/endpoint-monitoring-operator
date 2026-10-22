@@ -92,6 +92,7 @@ type CompositeNotifier struct {
 type SendError struct {
 	Notifiers []string
 	Errs      []error
+	Failed    []notifier.Notifier
 }
 
 func (e *SendError) Error() string {
@@ -109,6 +110,7 @@ func (c *CompositeNotifier) SendAlert(status string, values *notifier.NoticeValu
 		if err := n.SendAlert(status, values, client); err != nil {
 			failed.Notifiers = append(failed.Notifiers, n.name)
 			failed.Errs = append(failed.Errs, err)
+			failed.Failed = append(failed.Failed, n.Notifier)
 		}
 	}
 	if len(failed.Errs) > 0 {

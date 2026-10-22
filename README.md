@@ -171,7 +171,7 @@ kubectl apply -f dashboard/deploy/config.yaml -f dashboard/deploy/deployment.yam
 | `slack` | Slack webhook alerts |
 | `email` | Email alerts (SES/SMTP) |
 | `discord` | Discord webhook alerts |
-| `webhook` | Custom HTTP webhook |
+| `webhook` | Custom HTTP webhook; retries network errors, 429 and 5xx, up to 5 tries 30s apart |
 | `valkey` | Status-page time series storage |
 
 ---

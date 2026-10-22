@@ -86,12 +86,16 @@ func (w *WebhookNotifier) SendAlert(status string, values *notifier.NoticeValues
 	httpClient := &http.Client{Timeout: notifier.Timeout}
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("WEBHOOK: failed to make http webhook request: %w", err)
+		return &notifier.RetryableError{Err: fmt.Errorf("WEBHOOK: failed to make http webhook request: %w", err)}
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("WEBHOOK: non-2xx response from webhook: %s", resp.Status)
+		err := fmt.Errorf("WEBHOOK: non-2xx response from webhook: %s", resp.Status)
+		if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
+			return &notifier.RetryableError{Err: err}
+		}
+		return err
 	}
 
 	return nil
